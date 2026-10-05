@@ -141,7 +141,7 @@ B.reactor = () => {
   g.add(core)
   spin.push({ obj: core, speed: 1.4, axis: 'y' })
   for (const a of [0.8, 2.4, 4.0, 5.5]) cyl(g, 0.05, 0.05, 2.3, METAL, Math.cos(a) * 0.74, 1.6, Math.sin(a) * 0.74, 8)
-  stripe(g, 1.2, 0, 0.36, 0.78, AMBER, 0.05)
+  ringGlow(g, 0.9, 0.022, AMBER, 0.3, 0.9)
   return { group: g, spin }
 }
 
@@ -209,8 +209,11 @@ B.coffeetable = () => {
 }
 B.datashelf = () => {
   const g = new THREE.Group()
-  box(g, 1.7, 2.05, 0.44, DARK, 0, 1.025, 0, 0.05)
-  box(g, 1.54, 1.9, 0.38, '#1c2442', 0, 1.025, 0.04, 0.02)
+  box(g, 1.7, 2.05, 0.06, DARK, 0, 1.025, -0.19, 0.03) // back
+  for (const sx of [-1, 1]) box(g, 0.08, 2.05, 0.44, DARK, sx * 0.81, 1.025, 0, 0.03) // sides
+  box(g, 1.7, 0.08, 0.44, DARK, 0, 2.01, 0, 0.03) // top
+  box(g, 1.7, 0.1, 0.44, DARK, 0, 0.05, 0, 0.03) // base
+  box(g, 1.54, 1.9, 0.02, '#1c2442', 0, 1.025, -0.155, 0.005) // inside of the back
   for (let i = 0; i < 5; i++) box(g, 1.56, 0.05, 0.4, METAL_D, 0, 0.1 + i * 0.47, 0.03, 0.015)
   const cols = ['#ff6b6b', '#6ab8ff', '#ffd24a', '#6dffb0', '#c79aff', '#ff9ff3', '#4de0ff']
   for (let r = 0; r < 4; r++) {
@@ -294,7 +297,7 @@ B.replicator = () => {
   const g = new THREE.Group()
   box(g, 0.95, 1.5, 0.7, '#dfe6f8', 0, 0.78, 0, 0.1)
   box(g, 0.7, 0.45, 0.06, '#0e1430', 0, 1.05, 0.34, 0.03)
-  const win = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.36), holo(AMBER, 0.9, 0.55)); win.position.set(0, 1.05, 0.375); g.add(win)
+  const win = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.36), glow(0xffd98a, 0.55)); win.position.set(0, 1.05, 0.375); g.add(win)
   box(g, 0.62, 0.05, 0.3, METAL_D, 0, 0.82, 0.42, 0.02)
   mug(g, 0, 0.84, 0.42, '#ff9fb2')
   for (let i = 0; i < 4; i++) box(g, 0.12, 0.08, 0.04, ['#ff6b6b', '#ffd24a', '#6dffb0', '#6ab8ff'][i], -0.27 + i * 0.18, 1.4, 0.36, 0.015)

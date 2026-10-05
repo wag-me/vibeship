@@ -221,6 +221,8 @@ function makeTag(a) {
   const el = document.createElement('div')
   el.className = 'tag' + (a.kind === 'main' ? ' main' : ' sub')
   el.innerHTML = '<div class="speech" hidden></div><div class="chip" hidden><span class="e"></span><b></b></div><div class="name"></div>'
+  el._name = el.querySelector('.name'); el._chip = el.querySelector('.chip'); el._speech = el.querySelector('.speech')
+  el._icon = el._chip.querySelector('.e'); el._text = el._chip.querySelector('b')
   labels.appendChild(el)
   return el
 }
@@ -544,15 +546,16 @@ function updateAgents(dt, t, now) {
     v.set(r.position.x, 2.05 * 0.9 + (ag.wantSit ? -0.2 : 0) + ag.lift, r.position.z).project(camera)
     const visible = v.z < 1
     const x = (v.x * 0.5 + 0.5) * viewW, y = (-v.y * 0.5 + 0.5) * viewH
-    tagEl.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-100%)`
+    const tr = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-100%)`
+    if (tagEl._tr !== tr) { tagEl._tr = tr; tagEl.style.transform = tr } // a style write only when it moved
     tagEl.style.display = visible ? '' : 'none'
     tagEl.classList.toggle('sel', selected?.kind === 'agent' && selected.key === ag.key)
-    const nm = tagEl.querySelector('.name')
+    const nm = tagEl._name
     if (nm.textContent !== ag.data.name) nm.textContent = ag.data.name
-    const chip = tagEl.querySelector('.chip')
+    const chip = tagEl._chip
     const showChip = asking || mode !== 'idle' && mode !== 'look' || st !== 'idle'
     // bubble with the reply or a short feedback
-    const sp = tagEl.querySelector('.speech')
+    const sp = tagEl._speech
     if (ag.say && now < ag.say.until) {
       if (sp.textContent !== ag.say.text) sp.textContent = ag.say.text
       sp.classList.toggle('small', !!ag.say.small)
@@ -569,8 +572,8 @@ function updateAgents(dt, t, now) {
       const icon = asking ? '🔔' : mode === 'cheer' ? '🎉' : mode === 'sleep' ? '💤' : s.icon
       const text = asking ? 'asks for permission' : mode === 'cheer' ? 'done!' : mode === 'sleep' ? 'sleeping' : ag.data.detail || s.text
       chip.hidden = false
-      chip.querySelector('.e').textContent = icon
-      if (chip.querySelector('b').textContent !== text) chip.querySelector('b').textContent = text
+      if (tagEl._icon.textContent !== icon) tagEl._icon.textContent = icon
+      if (tagEl._text.textContent !== text) tagEl._text.textContent = text
     } else chip.hidden = true
   }
 }
@@ -585,11 +588,15 @@ let beamT = 1
 const linkMat = new THREE.MeshBasicMaterial({ color: '#7fe8ff', transparent: true, opacity: 0.55, depthWrite: false })
 const linkGeo = new THREE.CylinderGeometry(0.022, 0.022, 1, 6)
 const easeOutBack = (t) => { const x = t - 1; return 1 + 2.70158 * x * x * x + 1.70158 * x * x }
-function makeDrone() {
+const DRONE = {
+  body: new THREE.SphereGeometry(0.17, 14, 10), eye: new THREE.SphereGeometry(0.07, 10, 8), ring: new THREE.TorusGeometry(0.24, 0.025, 6, 20),
+  bodyMat: new THREE.MeshStandardMaterial({ color: '#eef3ff', roughness: 0.4 }), eyeMat: new THREE.MeshBasicMaterial({ color: '#4de0ff' }), ringMat: new THREE.MeshBasicMaterial({ color: '#7fe8ff' }),
+}
+function makeDrone() { // shared parts: a drone is made for every launch
   const g = new THREE.Group()
-  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 10), new THREE.MeshStandardMaterial({ color: '#eef3ff', roughness: 0.4 })))
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), new THREE.MeshBasicMaterial({ color: '#4de0ff' })); eye.position.z = 0.14; g.add(eye)
-  const ringM = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.025, 6, 20), new THREE.MeshBasicMaterial({ color: '#7fe8ff' })); ringM.rotation.x = Math.PI / 2; g.add(ringM)
+  g.add(new THREE.Mesh(DRONE.body, DRONE.bodyMat))
+  const eye = new THREE.Mesh(DRONE.eye, DRONE.eyeMat); eye.position.z = 0.14; g.add(eye)
+  const ringM = new THREE.Mesh(DRONE.ring, DRONE.ringMat); ringM.rotation.x = Math.PI / 2; g.add(ringM)
   return g
 }
 function padFlash() { beamT = 0; beam.visible = true }
@@ -1325,6 +1332,80 @@ function toggleSpawn(open) {
 // "Add an agent at this station": the next new agent that arrives sits at the selected station
 let pendingSeat = null // { id, scene, until }
 $('agent-btn').onclick = () => { pendingSeat = null; toggleSpawn() }
+
+// ---- Resume a recent session (tab of the Agent panel) ----
+let rsData = []
+function setSpawnTab(tab) {
+  $('sp-new').hidden = tab !== 'new'
+  $('sp-resume').hidden = tab !== 'resume'
+  for (const b of $('sp-tabs').children) b.setAttribute('aria-pressed', String(b.dataset.tab === tab))
+  if (tab === 'resume') { loadSessions(); $('rs-q').focus({ preventScroll: true }) }
+}
+$('sp-tabs').onclick = (e) => { const b = e.target.closest('button[data-tab]'); if (b) { sfx.click(); setSpawnTab(b.dataset.tab) } }
+const ago = (ms) => {
+  const s = Math.max(0, (Date.now() - ms) / 1000)
+  return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'
+}
+async function loadSessions() {
+  const box = $('rs-list')
+  const note = (t) => box.replaceChildren(Object.assign(document.createElement('div'), { className: 'none', textContent: t }))
+  if (!TOKEN) { note('Open the window with /vibeship to resume sessions.'); return }
+  if (!rsData.length) note('Loading…')
+  try {
+    const r = await fetch('/api/sessions', { headers: { 'x-token': TOKEN } })
+    if (r.status === 401) { note('Window no longer authorized: close it and run /vibeship again'); return }
+    const d = await r.json()
+    if (!r.ok) { note(d.error || 'Sessions not available'); return }
+    rsData = d.sessions ?? []
+    renderSessions()
+  } catch { note('Server unreachable') }
+}
+function renderSessions() {
+  const box = $('rs-list')
+  const q = $('rs-q').value.trim().toLowerCase()
+  const list = rsData.filter((x) => !q || (x.title + ' ' + x.project).toLowerCase().includes(q))
+  if (!list.length) { box.replaceChildren(Object.assign(document.createElement('div'), { className: 'none', textContent: rsData.length ? 'No session matches.' : 'No sessions yet.' })); return }
+  box.replaceChildren(...list.map((x) => {
+    const row = document.createElement('div')
+    row.className = 'rs-row'
+    row.setAttribute('role', 'listitem')
+    const t = document.createElement('div'); t.className = 'rs-title'; t.textContent = x.title; t.title = x.title
+    const m = document.createElement('div'); m.className = 'rs-meta'; m.title = x.cwd
+    m.textContent = '📁 ' + x.project + ' · ' + ago(x.lastAt) + ' · ' + fmtSize(x.size)
+    const b = document.createElement('button')
+    b.type = 'button'
+    if (x.live) {
+      const tag = document.createElement('span'); tag.className = 'live'; tag.textContent = ' · aboard now'; m.append(tag)
+      b.className = 'btn'; b.textContent = '👁 Show'
+      b.onclick = () => showSessionAgent(x.id)
+    } else {
+      b.className = 'btn primary'; b.textContent = '↩ Resume'
+      b.onclick = () => resumeSession(x.id, b)
+    }
+    row.append(t, m, b)
+    return row
+  }))
+}
+$('rs-q').oninput = renderSessions
+async function resumeSession(id, btn) {
+  if (!TOKEN) { toast('Open the window with /vibeship to resume sessions'); return }
+  btn.disabled = true
+  try {
+    const r = await fetch('/api/resume', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ id }) })
+    const d = await r.json().catch(() => ({}))
+    if (r.status === 401) toast('Window no longer authorized: close it and run /vibeship again')
+    else if (!r.ok) toast(d.error || 'Could not resume it')
+    else { sfx.place(); toast('↩ Resuming in a new terminal: the resident comes back in a few seconds'); toggleSpawn(false) }
+  } catch { toast('Server unreachable') }
+  btn.disabled = false
+}
+function showSessionAgent(session) {
+  const ag = agents.get(session + ':main')
+  if (!ag) { toast('It is open, but not aboard yet'); return }
+  toggleSpawn(false)
+  if (ag.loc !== sceneName) { switchScene(ag.loc, true); setTimeout(() => select({ kind: 'agent', key: ag.key }), 320) }
+  else select({ kind: 'agent', key: ag.key })
+}
 $('sp-close').onclick = () => { pendingSeat = null; toggleSpawn(false) }
 $('seat-add').onclick = () => {
   const f = selected?.kind === 'furn' ? furn.get(selected.id) : null
@@ -1444,6 +1525,22 @@ function setEditMode(on, quiet) {
   if (!quiet) { sfx.click(); toast(on ? 'Edit mode on: drag furniture and agents, add or remove furniture' : 'Edit mode off: nothing can be moved by accident') }
 }
 $('edit-btn').onclick = () => setEditMode(!editMode)
+
+// ---------- New version notice (footer) ----------
+const UPDATE_CMDS = 'claude plugin marketplace update vibeship\nclaude plugin update vibeship@vibeship'
+let updateData = null
+function renderUpdate(u) {
+  updateData = u ?? null
+  let hidden = ''
+  try { hidden = localStorage.getItem('vs-update-hidden') || '' } catch {}
+  $('upd').hidden = !u || hidden === u.latest
+  if (u) $('upd-text').textContent = '⬆️ Vibeship ' + u.latest + ' is out'
+}
+$('upd-how').onclick = async () => {
+  try { await navigator.clipboard.writeText(UPDATE_CMDS); toast('Copied: run it in a terminal, then restart Claude Code') }
+  catch { toast('In a terminal: claude plugin update vibeship@vibeship, then restart Claude Code') }
+}
+$('upd-x').onclick = () => { try { if (updateData) localStorage.setItem('vs-update-hidden', updateData.latest) } catch {} $('upd').hidden = true }
 
 // ---------- Toast ----------
 let toastTimer = null
@@ -2032,9 +2129,13 @@ function loadLocalLayout() {
     for (const k of Object.keys(saved)) if (k.endsWith('@3') && Array.isArray(saved[k])) layout.scenes[k] = saved[k]
   } catch {}
 }
+// While a save is pending, snapshots from the server (which may still hold the previous layout) are not applied.
+// Only the latest save clears the flag: an earlier request finishing must not reopen the door to a stale layout.
+let saveSeq = 0
 function saveLayout() {
   clearTimeout(saveTimer)
   savePending = true
+  const seq = ++saveSeq
   // backup copy in the browser: works even without a token
   try {
     const mine = {}
@@ -2045,7 +2146,7 @@ function saveLayout() {
   saveTimer = setTimeout(() => {
     fetch('/api/layout', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify(layout) })
       .catch(() => {})
-      .finally(() => { savePending = false })
+      .finally(() => { if (seq === saveSeq) savePending = false })
   }, 200)
 }
 const conn = $('conn')
@@ -2058,6 +2159,7 @@ function connect() {
     onAgents(data.agents ?? [])
     onChat(data.chat)
     onPerms(data.perms ?? [])
+    renderUpdate(data.update)
     infoData = data.info ?? {}
     updateModelChip()
     actsData = data.acts ?? {}
@@ -2102,12 +2204,22 @@ function tick(dt) {
   fx.update(dt)
   renderer.render(scene, camera)
 }
+// Frame pacing: full speed while the window has the focus. In the background (the usual case: the window sits next
+// to the terminal) it draws about 24 frames a second, which looks the same for this scene and costs far less power.
+// If the GPU cannot keep up at full resolution, the picture gets slightly softer instead of stuttering.
+const MAX_PIXEL_RATIO = Math.min(devicePixelRatio || 1, 2)
+let pixelRatio = MAX_PIXEL_RATIO, slowFor = 0
 let last = performance.now()
 function loop(ts) {
+  requestAnimationFrame(loop)
+  const background = !document.hasFocus()
+  if (background && ts - last < 1000 / 24 - 2) return
   const dt = Math.min(0.05, (ts - last) / 1000)
   last = ts
   tick(dt)
-  requestAnimationFrame(loop)
+  if (background) return
+  slowFor = dt > 1 / 40 ? slowFor + dt : Math.max(0, slowFor - dt * 0.5)
+  if (slowFor > 2 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); slowFor = 0 }
 }
 
 // ---------- Startup ----------

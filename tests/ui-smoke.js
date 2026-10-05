@@ -54,7 +54,7 @@ async function main() {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vibeship-ui-'))
   const port = await freePort()
   const base = 'http://127.0.0.1:' + port
-  server = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], { env: { ...process.env, AGENT_OFFICE_PORT: String(port), AGENT_OFFICE_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: path.join(tmp, 'claude') }, stdio: 'ignore' })
+  server = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], { env: { ...process.env, AGENT_OFFICE_PORT: String(port), AGENT_OFFICE_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_UPDATE_URL: 'data:application/json,{"version":"99.0.0"}' }, stdio: 'ignore' })
   for (let i = 0; i < 50; i++) { try { if ((await fetch(base + '/api/ping')).ok) break } catch {} await sleep(100) }
   const token = fs.readFileSync(path.join(tmp, 'data', 'token'), 'utf8').trim()
   const post = (p, body, auth = false) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(auth ? { 'x-token': token } : {}) }, body: JSON.stringify(body) })
@@ -146,6 +146,7 @@ async function main() {
     const before = await ev('window.__ao.items().length')
     await ev("document.getElementById('add-btn').click()")
     await ev("document.querySelector('#grid .card').click()")
+    for (let i = 0; i < 10 && (await ev('window.__ao.items().length')) !== before + 1; i++) await sleep(100) // the layout may be re-synced from the server meanwhile
     assert.equal(await ev('window.__ao.items().length'), before + 1)
     await ev("document.getElementById('cat-close').click()")
   })
@@ -164,12 +165,15 @@ async function main() {
     await ev("document.getElementById('sp-close').click()")
   })
   await step('statistics panel opens, fills in, and closes when another header button is pressed', async () => {
+    await ev("(() => { const el = document.getElementById('stats'); const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden'); window.__hl = []; Object.defineProperty(el, 'hidden', { configurable: true, get() { return d.get.call(this) }, set(v) { window.__hl.push(v + ' @ ' + new Error().stack.split(String.fromCharCode(10)).slice(2, 5).map((x) => x.trim().split('/').pop()).join(' < ')); d.set.call(this, v) } }) })()")
     await ev("document.getElementById('stats-btn').click()")
     await sleep(500)
     assert.equal(await ev("document.getElementById('stats').hidden"), false)
     assert.ok((await ev("document.getElementById('st-body').children.length")) >= 4)
     await ev("document.getElementById('tod').click()")
-    assert.equal(await ev("document.getElementById('stats').hidden"), true)
+    const closed = await ev("document.getElementById('stats').hidden")
+    if (!closed) console.log('      trace:', JSON.stringify(await ev('window.__hl')))
+    assert.equal(closed, true)
   })
   await step('a subagent roams the room while its task runs, and stops when it completes', async () => {
     await post('/api/event', { type: 'spawn', session: 's1', toolUseId: 't9', name: 'helper', description: 'look around' })
@@ -299,6 +303,41 @@ async function main() {
     await ev("[...document.querySelectorAll('#card-move button')].find((b) => /Engine/.test(b.textContent)).click()")
     await sleep(500)
     assert.equal((await (await fetch(base + '/stream')).body.getReader().read().then((r) => JSON.parse(Buffer.from(r.value).toString().replace(/^data: /, '').trim()))).agents.find((a) => a.session === 's1').loc, 'engine')
+  })
+  await step('changing deck again and again does not leak GPU memory', async () => {
+    const measure = async () => { await ev('window.__ao.step(2, 1 / 60); window.__ao.renderer.render(window.__ao.scene, window.__ao.camera)'); return ev('[window.__ao.renderer.info.memory.geometries, window.__ao.renderer.info.memory.textures]') }
+    const visit = async () => { for (const sc of ['engine', 'habitat', 'bridge']) { await ev("window.__ao.switchScene('" + sc + "', false)"); await sleep(350) } }
+    await visit(); await visit() // warm-up: what is used the first time gets uploaded to the GPU once
+    const before = await measure()
+    await visit(); await visit(); await visit()
+    const after = await measure()
+    assert.ok(after[0] <= before[0] + 5, 'geometries grew from ' + before[0] + ' to ' + after[0])
+    assert.ok(after[1] <= before[1], 'textures grew from ' + before[1] + ' to ' + after[1])
+  })
+  await step('the Agent panel lists recent sessions to resume, with search; the ones aboard can be shown', async () => {
+    const dir = path.join(tmp, 'claude', 'projects', 'C--work-demo')
+    fs.mkdirSync(dir, { recursive: true })
+    const L = (o) => JSON.stringify(o)
+    fs.writeFileSync(path.join(dir, '33333333-4444-4555-8666-777777777777.jsonl'), [L({ type: 'user', cwd: 'C:\\work\\demo', message: { content: 'Refactor the parser' } }), L({ type: 'ai-title', aiTitle: 'Parser refactor' })].join('\n'))
+    fs.writeFileSync(path.join(dir, 's1.jsonl'), L({ type: 'user', cwd: 'C:\\work\\ship', message: { content: 'Build the ship' } }))
+    await ev("document.getElementById('agent-btn').click()")
+    await ev("document.querySelector('#sp-tabs [data-tab=resume]').click()")
+    for (let i = 0; i < 20 && (await ev("document.querySelectorAll('#rs-list .rs-row').length")) < 2; i++) await sleep(150)
+    const rows = await ev("[...document.querySelectorAll('#rs-list .rs-row')].map((r) => [r.querySelector('.rs-title').textContent, r.querySelector('button').textContent])")
+    assert.deepEqual(rows.find((r) => r[0] === 'Parser refactor')?.[1], '↩ Resume')
+    assert.deepEqual(rows.find((r) => r[0] === 'Build the ship')?.[1], '👁 Show', 'the session already aboard is shown, not resumed')
+    await ev("(() => { const q = document.getElementById('rs-q'); q.value = 'parser'; q.dispatchEvent(new Event('input')) })()")
+    assert.deepEqual(await ev("[...document.querySelectorAll('#rs-list .rs-title')].map((t) => t.textContent)"), ['Parser refactor'])
+    await ev("document.querySelector('#sp-tabs [data-tab=new]').click()")
+    assert.equal(await ev("document.getElementById('sp-new').hidden"), false)
+    await ev("document.getElementById('sp-close').click()")
+  })
+  await step('a new version shows a notice in the footer, which can be hidden', async () => {
+    for (let i = 0; i < 20 && (await ev("document.getElementById('upd').hidden")); i++) await sleep(150)
+    assert.equal(await ev("document.getElementById('upd').hidden"), false)
+    assert.match(await ev("document.getElementById('upd-text').textContent"), /99\.0\.0/)
+    await ev("document.getElementById('upd-x').click()")
+    assert.equal(await ev("document.getElementById('upd').hidden"), true)
   })
   await step('no JavaScript errors were logged', async () => { assert.deepEqual(errors, []) })
 

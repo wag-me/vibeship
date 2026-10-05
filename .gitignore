@@ -12,8 +12,17 @@ node_modules/
 Thumbs.db
 
 # Dati locali di Vibeship (token, layout) stanno nella cartella utente, ma per sicurezza:
+.claude-vibeship/
 .claude-agent-office/
 launch-*.cmd
 launch-*.command
 
 tests/ui-smoke.png
+
+# Video generati da tools/make-video.js
+docs/*.mp4
+docs/vibeship-frames/
+
+# Personal tools and generated videos: kept next to the project, never committed
+/local/
+*.mp4

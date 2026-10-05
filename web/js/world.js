@@ -1,5 +1,5 @@
 // Environment: a diorama-style spaceship deck (octagonal hull, portholes, superstructures), space and ship lights.
-import { THREE, mat, glow, glowMats, box, cyl, sph, rand, bakeShared } from './lib.js'
+import { THREE, mat, glow, glowMats, box, cyl, sph, rand, bakeShared, disposeGroup } from './lib.js'
 
 // Play area (where objects can be placed)
 export const ROOM = { w: 24, d: 14, wallH: 4.2 }
@@ -208,7 +208,8 @@ export function createWorld(scene, renderer) {
 
   // ----- Materiali dello scafo -----
   const accentMat = new THREE.MeshStandardMaterial({ color: '#4de0ff', emissive: '#4de0ff', emissiveIntensity: 0.9, roughness: 0.4 })
-  const floorMat = new THREE.MeshStandardMaterial({ map: FLOORS.bridge(), roughness: 0.55, metalness: 0.15 })
+  const floorTex = {} // one texture per deck, made once
+  const floorMat = new THREE.MeshStandardMaterial({ map: (floorTex.bridge = FLOORS.bridge()), roughness: 0.55, metalness: 0.15 })
   const hullMat = new THREE.MeshStandardMaterial({ map: hullTexture(), color: '#6f7ca8', roughness: 0.6, metalness: 0.35 })
   const wallMat = new THREE.MeshStandardMaterial({ color: '#3a4878', roughness: 0.7, metalness: 0.15 })
   const trimMat = new THREE.MeshStandardMaterial({ color: '#8da0cf', roughness: 0.5, metalness: 0.3 })
@@ -391,6 +392,7 @@ export function createWorld(scene, renderer) {
   }
   function buildDecor(name) {
     root.remove(decor)
+    disposeGroup(decor) // its geometries, materials and glowing screens (which the light loop updates every frame)
     decor = new THREE.Group()
     root.add(decor)
     const zb = -HZ + 0.06, xl = -HX + 0.06
@@ -438,7 +440,7 @@ export function createWorld(scene, renderer) {
   function setScene(name) {
     sceneName = name
     const th = THEMES[name]
-    floorMat.map = FLOORS[name]()
+    floorMat.map = floorTex[name] ??= FLOORS[name]()
     floorMat.needsUpdate = true
     wallMat.color.set(th.wall); trimMat.color.set(th.trim); dadoMat.color.set(th.dado)
     sideMat.color.set(th.side); hullMat.color.set(th.hull)
@@ -464,6 +466,7 @@ export function createWorld(scene, renderer) {
   function cycleTOD() { const i = TOD_ORDER.indexOf(mode); mode = TOD_ORDER[(i + 1) % TOD_ORDER.length]; resolveTarget(); return mode }
   function setAlert(b) { if (alert !== b) { alert = b; resolveTarget() } }
 
+  const sunTarget = new THREE.Vector3()
   function update(dt, t, camera) {
     if (camera) { space.position.copy(camera.position); sky.position.copy(camera.position); stars.position.copy(camera.position) }
     const k = 1 - Math.exp(-dt * 3)
@@ -472,7 +475,7 @@ export function createWorld(scene, renderer) {
     cur.hemiI += (target.hemiI - cur.hemiI) * k
     cur.exp += (target.exp - cur.exp) * k
     cur.night += (target.night - cur.night) * k
-    cur.sunPos.lerp(new THREE.Vector3(...target.sunPos), k)
+    cur.sunPos.lerp(sunTarget.set(...target.sunPos), k)
     sun.color.copy(cur.sun); sun.intensity = cur.sunI
     sun.position.copy(cur.sunPos).multiplyScalar(1.5); sun.target.position.set(0, 0, 0)
     hemi.color.copy(cur.hemiS); hemi.groundColor.copy(cur.hemiG); hemi.intensity = cur.hemiI

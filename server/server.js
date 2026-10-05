@@ -9,8 +9,37 @@ const { spawn, spawnSync } = require('child_process')
 
 const PORT = Number(process.env.AGENT_OFFICE_PORT || 47890)
 const WEB = path.join(__dirname, '..', 'web')
-const DATA_DIR = process.env.AGENT_OFFICE_DIR || path.join(os.homedir(), '.claude-agent-office')
+const DATA_DIR = process.env.AGENT_OFFICE_DIR || path.join(os.homedir(), '.claude-vibeship')
+// The data folder used to be ~/.claude-agent-office: copy it over once, so the token, the layout and the recent folders are kept.
+if (!process.env.AGENT_OFFICE_DIR) {
+  const old = path.join(os.homedir(), '.claude-agent-office')
+  try { if (!fs.existsSync(DATA_DIR) && fs.statSync(old).isDirectory()) fs.cpSync(old, DATA_DIR, { recursive: true }) } catch {}
+}
 const LAYOUT_FILE = path.join(DATA_DIR, 'layout.json')
+
+// ---------- New version check ----------
+// Reads the version published on GitHub (the plugin manifest on main) at startup and every 6 hours, and compares it with
+// this copy. No data is sent: it is a plain download of a public file. VIBESHIP_NO_UPDATE_CHECK=1 turns it off.
+const PLUGIN_VERSION = (() => { try { return String(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version) } catch { return '0.0.0' } })()
+const UPDATE_URL = process.env.VIBESHIP_UPDATE_URL || 'https://raw.githubusercontent.com/wag-me/vibeship/main/.claude-plugin/plugin.json'
+let update = null // { current, latest } when a newer version is out
+function isNewer(a, b) {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number)
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0)
+  return false
+}
+async function checkUpdate() {
+  if (process.env.VIBESHIP_NO_UPDATE_CHECK) return
+  try {
+    const r = await fetch(UPDATE_URL, { signal: AbortSignal.timeout(8000) })
+    if (!r.ok) return
+    const v = String((await r.json()).version || '')
+    const next = /^\d+\.\d+\.\d+$/.test(v) && isNewer(v, PLUGIN_VERSION) ? { current: PLUGIN_VERSION, latest: v } : null
+    if (JSON.stringify(next) !== JSON.stringify(update)) { update = next; broadcast() }
+  } catch {
+    // offline or GitHub unreachable: try again later
+  }
+}
 const IDLE_AFTER_MS = 8000
 
 // agents: key "<session>:<id>" -> agent
@@ -66,11 +95,17 @@ function snapshot() {
   const a = {}
   for (const [k, v] of acts) a[k] = v.slice(-30)
   const files = Object.fromEntries([...roots].map(([k, v]) => [k, path.basename(v) || v]))
-  return JSON.stringify({ agents: list, layout, chat: c, perms: [...perms.values()], acts: a, roots: files, info: Object.fromEntries(infos) })
+  return JSON.stringify({ agents: list, layout, chat: c, perms: [...perms.values()], acts: a, roots: files, info: Object.fromEntries(infos), update })
 }
+// Events often come in bursts (several tool calls, a turn ending): they are sent to the windows as one snapshot.
+let broadcastTimer = null
 function broadcast() {
-  const data = 'data: ' + snapshot() + '\n\n'
-  for (const res of clients) res.write(data)
+  if (broadcastTimer) return
+  broadcastTimer = setTimeout(() => {
+    broadcastTimer = null
+    const data = 'data: ' + snapshot() + '\n\n'
+    for (const res of clients) res.write(data)
+  }, 30)
 }
 function saveLayout() {
   try {
@@ -291,7 +326,7 @@ function inRoot(session, p) {
   const realRoot = fs.realpathSync(root)
   const real = fs.realpathSync(path.resolve(realRoot, String(p || '.')))
   const rel = path.relative(realRoot, real)
-  if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('Outside the working folder')
+  if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) throw new Error('Outside the working folder') // a name like "..notes" inside is fine
   return { real, rel: rel.split(path.sep).join('/') }
 }
 function listFiles(session, p) {
@@ -346,7 +381,8 @@ function createProject(parent, name, git) {
 }
 const q = (x) => "'" + String(x).replace(/'/g, "'\\''") + "'"
 let lastLaunch = 0
-function launchAgent(cwd, name, species, shirt, loc) {
+function launchAgent(cwd, name, species, shirt, loc, resume) {
+  if (resume !== undefined && !SESSION_ID.test(String(resume))) throw new Error('Invalid session')
   if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || /["%\r\n]/.test(cwd)) throw new Error('Invalid path')
   if (!fs.statSync(cwd).isDirectory()) throw new Error('Not a folder')
   const plugin = path.join(__dirname, '..')
@@ -365,13 +401,13 @@ function launchAgent(cwd, name, species, shirt, loc) {
   if (WIN) {
     if (envs.some(([, v]) => /["%\r\n]/.test(v))) throw new Error('Unsupported variable')
     const f = path.join(DATA_DIR, 'launch-' + Date.now() + '.cmd')
-    const lines = ['@echo off', 'title Vibeship', 'cd /d "' + cwd + '"', ...envs.map(([k, v]) => 'set "' + k + '=' + v + '"'), 'call claude --plugin-dir "' + plugin + '"', 'exit', '']
+    const lines = ['@echo off', 'title Vibeship', 'cd /d "' + cwd + '"', ...envs.map(([k, v]) => 'set "' + k + '=' + v + '"'), 'call claude --plugin-dir "' + plugin + '"' + (resume ? ' --resume ' + resume : ''), 'exit', '']
     fs.writeFileSync(f, lines.join('\r\n'))
     spawn('cmd.exe', ['/d', '/c', 'start', '"Vibeship"', '"' + f + '"'], { detached: true, stdio: 'ignore', windowsVerbatimArguments: true }).unref()
     setTimeout(() => fs.unlink(f, () => {}), 90000)
   } else if (process.platform === 'darwin') {
     const f = path.join(DATA_DIR, 'launch-' + Date.now() + '.command')
-    const lines = ['#!/bin/bash', 'cd ' + q(cwd), ...envs.map(([k, v]) => 'export ' + k + '=' + q(v)), 'claude --plugin-dir ' + q(plugin), '']
+    const lines = ['#!/bin/bash', 'cd ' + q(cwd), ...envs.map(([k, v]) => 'export ' + k + '=' + q(v)), 'claude --plugin-dir ' + q(plugin) + (resume ? ' --resume ' + q(resume) : ''), '']
     fs.writeFileSync(f, lines.join('\n'), { mode: 0o755 })
     spawn('open', ['-a', 'Terminal', f], { detached: true, stdio: 'ignore' }).unref()
     setTimeout(() => fs.unlink(f, () => {}), 90000)
@@ -418,6 +454,58 @@ function collectFiles() {
   }
   return out
 }
+// ---------- Recent sessions, to resume them from the window ----------
+// Read from the same transcripts as the statistics. Only the start and the end of each file are read (titles, folder,
+// first message), so even very long sessions cost little; the result is cached per file until it changes.
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const sessionInfoCache = new Map() // file -> { sig, info }
+const firstText = (content) => {
+  const parts = typeof content === 'string' ? [content] : Array.isArray(content) ? content.filter((c) => c && c.type === 'text').map((c) => c.text) : []
+  return parts.map((t) => String(t).trim()).find((t) => t && !t.startsWith('<')) || '' // system reminders and command echoes start with a tag
+}
+function readSlice(fd, pos, len) { const b = Buffer.alloc(len); const n = fs.readSync(fd, b, 0, len, pos); return b.subarray(0, n).toString('utf8') }
+function sessionInfo(file) {
+  const st = fs.statSync(file)
+  const sig = st.mtimeMs + ':' + st.size
+  const c = sessionInfoCache.get(file)
+  if (c && c.sig === sig) return c.info
+  const HEAD = 512 * 1024, TAIL = 256 * 1024
+  const fd = fs.openSync(file, 'r')
+  let head, tail = ''
+  try { head = readSlice(fd, 0, Math.min(st.size, HEAD)); if (st.size > HEAD) tail = readSlice(fd, Math.max(HEAD, st.size - TAIL), TAIL) } finally { fs.closeSync(fd) }
+  let cwd = '', first = '', ai = '', custom = ''
+  for (const part of [head, tail]) {
+    for (const line of part.split('\n')) {
+      if (!line.includes('"type"')) continue
+      let o
+      try { o = JSON.parse(line) } catch { continue } // the cut line at either end of a slice is skipped
+      if (o.type === 'custom-title' && o.customTitle) custom = String(o.customTitle) // the last one wins
+      else if (o.type === 'ai-title' && o.aiTitle) ai = String(o.aiTitle)
+      if (!cwd && typeof o.cwd === 'string') cwd = o.cwd
+      if (!first && o.type === 'user' && !o.isMeta && !o.isSidechain && o.message) first = firstText(o.message.content)
+    }
+  }
+  const info = { id: path.basename(file, '.jsonl'), cwd, title: (custom || ai || first).replace(/\s+/g, ' ').trim().slice(0, 140), lastAt: st.mtimeMs, size: st.size }
+  sessionInfoCache.set(file, { sig, info })
+  return info
+}
+function recentSessions(limit = 30) {
+  const files = []
+  for (const { file } of collectFiles()) { try { files.push({ file, m: fs.statSync(file).mtimeMs }) } catch {} }
+  files.sort((a, b) => b.m - a.m)
+  const out = []
+  for (const { file } of files.slice(0, limit * 2)) {
+    let info
+    try { info = sessionInfo(file) } catch { continue }
+    if (!info.cwd || !info.title) continue // nothing to show or to resume (e.g. a session that only ran a command)
+    out.push({ ...info, project: path.basename(info.cwd) || info.cwd, live: agents.has(info.id + ':main') })
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+let statsCache = null
+const liveCounts = () => ({ agents: [...agents.values()].filter((a) => a.kind === 'main').length, subagents: [...agents.values()].filter((a) => a.kind === 'sub').length })
 function computeStats(days) {
   const now = Date.now()
   const todayKey = dayKey(now)
@@ -602,6 +690,24 @@ const server = http.createServer((req, res) => {
     })
     return
   }
+  if (req.method === 'GET' && url.pathname === '/api/sessions') {
+    if (!authed(req)) { res.writeHead(401); return res.end() }
+    try { return json(res, { sessions: recentSessions() }) } catch { return json(res, { error: 'Sessions not available' }, 500) }
+  }
+  if (req.method === 'POST' && url.pathname === '/api/resume') {
+    if (!authed(req)) { res.writeHead(401); return res.end() }
+    return readBody(req, (b) => {
+      try {
+        const id = b && String(b.id || '')
+        if (!SESSION_ID.test(id)) throw new Error('Invalid session')
+        const sess = recentSessions(200).find((x) => x.id === id)
+        if (!sess) throw new Error('Session not found')
+        if (sess.live) throw new Error('This session is already open')
+        launchAgent(sess.cwd, '', undefined, undefined, undefined, id)
+        json(res, { ok: true })
+      } catch (e) { json(res, { error: e.code === 'ENOENT' ? 'Its folder no longer exists' : e.message || 'Error' }, 400) }
+    })
+  }
   if (req.method === 'GET' && url.pathname === '/api/commands') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     return json(res, { commands: cmds.get(url.searchParams.get('session') || '') || [] })
@@ -612,12 +718,16 @@ const server = http.createServer((req, res) => {
     const q = queues.get(sid) || []
     queues.delete(sid)
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    return res.end(JSON.stringify({ commands: q }))
+    return res.end(JSON.stringify({ commands: q, known: agents.has(sid + ':main'), update: update || undefined }))
   }
   if (req.method === 'GET' && url.pathname === '/api/stats') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     const days = [7, 14, 30].includes(Number(url.searchParams.get('days'))) ? Number(url.searchParams.get('days')) : 14
-    try { return json(res, computeStats(days)) } catch { return json(res, { error: 'Statistics not available' }, 500) }
+    // the window refreshes every 15 s: reading every transcript again within a few seconds is wasted work
+    try {
+      if (!statsCache || statsCache.days !== days || Date.now() - statsCache.at > 5000) statsCache = { days, at: Date.now(), data: computeStats(days) }
+      return json(res, { ...statsCache.data, live: liveCounts() })
+    } catch { return json(res, { error: 'Statistics not available' }, 500) }
   }
   if (req.method === 'GET' && url.pathname === '/api/dirs') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
@@ -708,4 +818,7 @@ const server = http.createServer((req, res) => {
 })
 
 server.on('error', () => process.exit(0)) // port already in use: another server is running
-server.listen(PORT, '127.0.0.1')
+server.listen(PORT, '127.0.0.1', () => {
+  void checkUpdate()
+  setInterval(checkUpdate, 6 * 3600 * 1000).unref()
+})

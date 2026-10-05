@@ -28,7 +28,7 @@ async function readToken($) {
   if (!dir) {
     const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
     if (!home) return null
-    dir = home + '/.claude-agent-office'
+    dir = home + '/.claude-vibeship'
   }
   try {
     tokenCache = String(await $.fs.read(dir + '/token')).trim()
@@ -48,7 +48,14 @@ async function pollCommands($) {
     const r = await $.http.fetch(BASE + '/api/poll?session=' + encodeURIComponent(sessionId), { headers: { 'x-token': token } })
     if (r.status === 401) { tokenCache = null; return }
     if (!r.ok) return
-    const { commands } = JSON.parse(r.text)
+    const { commands, known, update } = JSON.parse(r.text)
+    if (update && update.latest && !updateNoticed) { // once per session, in the terminal
+      updateNoticed = true
+      $.ui.toast('Vibeship ' + update.latest + ' is available (you have ' + update.current + '). To update: claude plugin update vibeship@vibeship, then restart Claude Code', { timeoutMs: 15000 })
+    }
+    // A server that does not know this session (it was started after this session, or restarted): introduce it again,
+    // so every open session shows up as soon as a window opens. At most once every few seconds.
+    if (known === false && (await $.clock.now()) - lastAnnounce > 4000) void announce($)
     for (const c of commands ?? []) {
       if (c.kind === 'say' && c.text && /^\/[\w:.-]+(\s|$)/.test(String(c.text).trim())) {
         const m = /^\/([\w:.-]+)\s*([\s\S]*)$/.exec(String(c.text).trim())
@@ -281,13 +288,21 @@ async function openWindow($) {
   return false
 }
 
+// Introduces this session to the server: name, look, location, folder, then model and commands.
+let lastAnnounce = 0
+let updateNoticed = false // a newer version was already pointed out in this session
+async function announce($) {
+  lastAnnounce = await $.clock.now()
+  const cwd = await $.session.cwd()
+  send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc, cwd: String(cwd) })
+  void sendCommandList($)
+}
+
 // ---------- Commands ----------
 // /vibeship opens the 3D window.
 async function runWindowCommand($) {
   const ok = await openWindow($)
-  const cwd = await $.session.cwd()
-  send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc, cwd: String(cwd) })
-  void sendCommandList($)
+  await announce($)
   return { text: ok ? 'Vibeship window opened: ' + BASE : 'Server started on ' + BASE + ' but I could not open the browser: open it manually.' }
 }
 
@@ -307,9 +322,8 @@ export function register(on) {
     sessionId = await $.session.id()
     if (cancelPoll) cancelPoll.cancel()
     cancelPoll = $.clock.every(1000, () => void pollCommands($))
-    const cwd = await $.session.cwd()
-    // If the server is already up (window open), report the session; otherwise it starts with /vibeship
-    if (await isServerUp($)) { send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc, cwd: String(cwd) }); void sendCommandList($) }
+    // If the server is already up (window open), report the session; otherwise the next poll does it once a window starts one
+    if (await isServerUp($)) await announce($)
     return next(e)
   })
 

@@ -16,6 +16,7 @@ export function mat(color, o = {}) {
       transparent: o.opacity !== undefined && o.opacity < 1,
       opacity: o.opacity ?? 1,
     })
+    m.userData.shared = true
     mats.set(key, m)
   }
   return m
@@ -32,7 +33,7 @@ export function glow(color, base = 1) {
 const geos = new Map()
 function cached(key, make) {
   let g = geos.get(key)
-  if (!g) { g = make(); geos.set(key, g) }
+  if (!g) { g = make(); g.userData.shared = true; geos.set(key, g) }
   return g
 }
 
@@ -105,6 +106,7 @@ function blobTexture() {
   g.fillRect(0, 0, 128, 128)
   blobTex = new THREE.CanvasTexture(c)
   blobTex.colorSpace = THREE.SRGBColorSpace
+  blobTex.userData.shared = true
   return blobTex
 }
 const blobMat = () => cached('blobmat', () => new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false }))
@@ -121,13 +123,19 @@ export const rand = (seed) => { // generatore deterministico semplice
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
 }
 
-// Frees the glowing materials of a removed object (cached ones are shared and stay).
+// Frees what a removed object owns on the GPU: its own geometries, materials and textures.
+// Shared ones (the caches above, marked userData.shared) stay, other objects still use them.
 export function disposeGroup(g) {
   g.traverse((o) => {
-    const m = o.material
-    if (!m) return
-    const i = glowMats.findIndex((x) => x.m === m)
-    if (i >= 0) { glowMats.splice(i, 1); m.dispose() }
+    if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose()
+    const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []
+    for (const m of list) {
+      const i = glowMats.findIndex((x) => x.m === m)
+      if (i >= 0) glowMats.splice(i, 1)
+      if (m.userData.shared) continue
+      for (const k of ['map', 'emissiveMap', 'alphaMap']) if (m[k] && !m[k].userData.shared) m[k].dispose()
+      m.dispose()
+    }
   })
 }
 
@@ -135,6 +143,7 @@ export function disposeGroup(g) {
 // Merges all opaque, non-glowing meshes under `root` into a single mesh with per-vertex colors.
 // Transparent meshes, glowing ones or those excluded by `skip` stay separate.
 const vertexMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 })
+vertexMat.userData.shared = true
 export function bake(root, skip = () => false) {
   root.updateMatrixWorld(true)
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert()

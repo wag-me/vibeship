@@ -14,7 +14,7 @@ function fakeServer(on: any, queued: any[]) {
     if (e.url.includes('/api/poll')) {
       const commands = served ? [] : queued
       served = true
-      return reply(JSON.stringify({ commands }))
+      return reply(JSON.stringify({ commands, known: posted.known ?? true, update: posted.update }))
     }
     if (e.url.includes('/api/event')) {
       posted.push(JSON.parse(String(e.init?.body ?? '{}')))
@@ -37,6 +37,7 @@ async function boot($: any, on: any, queued: any[]) {
   const posted = fakeServer(on, queued)
   await $.session.start({ cwd: 'C:/work/proj', surface: 'terminal', isInteractive: true })
   await clock.advance(1100) // one poll of the command queue
+  posted.clock = clock
   return posted
 }
 
@@ -145,4 +146,28 @@ test('a rename from the window sticks: the mod announces the new name', async ($
   const posted = await boot($, on, [{ kind: 'rename', value: 'Ada  <Lovelace>' }])
   const starts = posted.filter((p: any) => p.type === 'session_start')
   expect(starts.at(-1).label).toBe('Ada Lovelace') // symbols are stripped and spaces collapsed
+})
+
+test('a session introduces itself again to a server that does not know it (a window opened later)', async ($, on) => {
+  const posted = await boot($, on, [])
+  const count = () => posted.filter((p: any) => p.type === 'session_start').length
+  const before = count()
+  posted.known = false
+  await posted.clock.advance(6000)
+  const starts = posted.filter((p: any) => p.type === 'session_start')
+  expect(starts.length).toBeGreaterThan(before)
+  expect(starts.at(-1).cwd).toBe('C:/work/proj')
+  expect(starts.length - before).toBeLessThanOrEqual(2) // not on every poll
+})
+
+test('a new version is pointed out in the terminal, once per session', async ($, on) => {
+  const toasts: string[] = []
+  on('ui.toast', (_: any, e: any) => { toasts.push(JSON.stringify(e)); return { value: undefined } })
+  const posted = await boot($, on, [])
+  expect(toasts.length).toBe(0)
+  posted.update = { current: '0.1.0', latest: '0.2.0' }
+  await posted.clock.advance(5000)
+  expect(toasts.length).toBe(1)
+  expect(toasts[0]).toContain('0.2.0')
+  expect(toasts[0]).toContain('claude plugin update vibeship@vibeship')
 })

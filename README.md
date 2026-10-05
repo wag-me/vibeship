@@ -43,7 +43,15 @@ Inside Claude Code (any terminal, any project):
 /plugin marketplace add wag-me/vibeship
 /plugin install vibeship@vibeship
 ```
-Restart Claude Code, then type `/vibeship` in any session. Update later with `/plugin marketplace update vibeship`.
+Restart Claude Code, then type `/vibeship` in any session.
+
+### Updates
+When a new version is out, Vibeship tells you: a notice in the window and a message in each Claude Code session. To update, in a terminal:
+```bash
+claude plugin marketplace update vibeship
+claude plugin update vibeship@vibeship
+```
+then restart Claude Code. The check downloads the public `plugin.json` from GitHub every few hours and sends nothing; set `VIBESHIP_NO_UPDATE_CHECK=1` to turn it off.
 
 Prefer not to install? Load it for one session from a clone of this repo:
 ```bash
@@ -61,10 +69,11 @@ Sessions started after the window is open appear in it by themselves; for one th
 | Variable | Effect |
 | :- | :- |
 | `AGENT_OFFICE_PORT` | local server port (default 47890) |
-| `AGENT_OFFICE_DIR` | data folder (token, layout); default `~/.claude-agent-office` |
+| `AGENT_OFFICE_DIR` | data folder (token, layout, recent folders, uploads); default `~/.claude-vibeship` |
 | `AGENT_OFFICE_NAME` | resident's name (default: folder name) |
 | `AGENT_OFFICE_LOOK` | look, `species:uniform` (e.g. `fox:3`) |
 | `AGENT_OFFICE_LOC` | location: `bridge`, `engine` or `habitat` |
+| `VIBESHIP_NO_UPDATE_CHECK` | set to `1` to stop checking GitHub for new versions |
 
 ## Security
 - The server listens **only on `127.0.0.1`**.
@@ -94,6 +103,8 @@ node --test tests/server.test.js     # server tests
 node tests/ui-smoke.js               # opens the window in headless Edge/Chrome and checks it
 ```
 Reload the window with Ctrl+R: files are served from disk, so changes in `web/` do not need a server restart.
+
+To release a new version, raise `version` in `.claude-plugin/plugin.json` and push to `main`: that is what installed copies compare against.
 
 ## Contributing
 Contributions are welcome, from a typo to a new feature.

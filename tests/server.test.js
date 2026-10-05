@@ -43,7 +43,7 @@ before(async () => {
   const port = await freePort()
   base = 'http://127.0.0.1:' + port
   child = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], {
-    env: { ...process.env, AGENT_OFFICE_PORT: String(port), AGENT_OFFICE_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: claudeDir },
+    env: { ...process.env, AGENT_OFFICE_PORT: String(port), AGENT_OFFICE_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: claudeDir, VIBESHIP_NO_UPDATE_CHECK: '1' },
     stdio: 'ignore',
   })
   for (let i = 0; i < 50; i++) { try { if ((await fetch(base + '/api/ping')).ok) break } catch {} await new Promise((r) => setTimeout(r, 100)) }
@@ -302,4 +302,91 @@ test('rename: applied at once, unique among agents, cleaned, and queued for the 
   assert.deepEqual(q.map((c) => c.value), ['Ada Lovelace', 'bxb'])
   await event({ type: 'session_end', session: 'r1' })
   await event({ type: 'session_end', session: 'r2' })
+})
+
+test('poll tells the mod whether the server knows its session (so it can introduce itself again)', async () => {
+  assert.equal((await (await api('/api/poll?session=nobody')).json()).known, false)
+  await event({ type: 'session_start', session: 'kn' })
+  assert.equal((await (await api('/api/poll?session=kn')).json()).known, true)
+  await event({ type: 'session_end', session: 'kn' })
+})
+
+test('recent sessions: titles from the transcripts, live ones marked, resume refused when it cannot work', async () => {
+  const A = '11111111-2222-4333-8444-555555555555', B = '22222222-3333-4444-8555-666666666666'
+  const dir = path.join(tmp, 'claude', 'projects', 'C--work-demo2')
+  fs.mkdirSync(dir, { recursive: true })
+  const cwd = path.join(tmp, 'gone', 'demo2') // a folder that does not exist (any more)
+  const L = (o) => JSON.stringify(o)
+  fs.writeFileSync(path.join(dir, A + '.jsonl'), [
+    L({ type: 'user', isMeta: true, cwd, message: { content: '<local-command-caveat>ignored' } }),
+    L({ type: 'user', cwd, message: { content: [{ type: 'text', text: '<system-reminder>ignored</system-reminder>' }, { type: 'text', text: 'Fix the login bug please' }] } }),
+    L({ type: 'ai-title', aiTitle: 'Fixing the login bug' }),
+  ].join('\n'))
+  fs.writeFileSync(path.join(dir, B + '.jsonl'), [
+    L({ type: 'user', cwd, message: { content: 'Write the docs' } }),
+    L({ type: 'custom-title', customTitle: 'My docs session' }),
+  ].join('\n'))
+  let list = (await (await api('/api/sessions')).json()).sessions
+  const a = list.find((x) => x.id === A), b = list.find((x) => x.id === B)
+  assert.equal(a.title, 'Fixing the login bug') // the AI title beats the first message
+  assert.equal(b.title, 'My docs session') // a title set with /rename beats both
+  assert.equal(a.project, 'demo2')
+  assert.equal(a.live, false)
+  assert.ok(!list.some((x) => x.id === 's1'), 'a transcript with nothing to show is left out')
+  assert.equal((await api('/api/sessions', { auth: false })).status, 401)
+  // resume: checked before any terminal is opened
+  const resume = (id) => api('/api/resume', { method: 'POST', body: { id } })
+  assert.equal((await api('/api/resume', { method: 'POST', auth: false, body: { id: A } })).status, 401)
+  assert.equal((await resume('not-a-session')).status, 400)
+  assert.equal((await resume('"; rm -rf / #')).status, 400)
+  assert.match((await (await resume('99999999-9999-4999-8999-999999999999')).json()).error, /not found/)
+  assert.match((await (await resume(B)).json()).error, /folder no longer exists/)
+  await event({ type: 'session_start', session: A, label: 'demo2' })
+  list = (await (await api('/api/sessions')).json()).sessions
+  assert.equal(list.find((x) => x.id === A).live, true)
+  assert.match((await (await resume(A)).json()).error, /already open/)
+  await event({ type: 'session_end', session: A })
+})
+
+test('the old data folder (~/.claude-agent-office) is copied to ~/.claude-vibeship once, keeping the token', async () => {
+  const home = path.join(tmp, 'home')
+  const old = path.join(home, '.claude-agent-office')
+  fs.mkdirSync(old, { recursive: true })
+  const tok = 'ab'.repeat(24)
+  fs.writeFileSync(path.join(old, 'token'), tok)
+  fs.writeFileSync(path.join(old, 'layout.json'), JSON.stringify({ scene: 'engine', scenes: {} }))
+  const port = await freePort()
+  const env = { ...process.env, AGENT_OFFICE_PORT: String(port), USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_NO_UPDATE_CHECK: '1' }
+  delete env.AGENT_OFFICE_DIR
+  const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], { env, stdio: 'ignore' })
+  try {
+    for (let i = 0; i < 50; i++) { try { if ((await fetch('http://127.0.0.1:' + port + '/api/ping')).ok) break } catch {} await new Promise((r) => setTimeout(r, 100)) }
+    const nu = path.join(home, '.claude-vibeship')
+    assert.equal(fs.readFileSync(path.join(nu, 'token'), 'utf8'), tok) // same token: windows and sessions keep working
+    assert.equal(JSON.parse(fs.readFileSync(path.join(nu, 'layout.json'), 'utf8')).scene, 'engine')
+    assert.ok(fs.existsSync(path.join(old, 'token')), 'the old folder is left as it was')
+    const r = await fetch('http://127.0.0.1:' + port + '/api/stats', { headers: { 'x-token': tok } })
+    assert.equal(r.status, 200)
+  } finally { srv.kill() }
+})
+
+test('new version check: a newer published version is announced, an equal or older one is not', async () => {
+  const current = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version
+  const run = async (published) => {
+    const port = await freePort()
+    const env = { ...process.env, AGENT_OFFICE_PORT: String(port), AGENT_OFFICE_DIR: path.join(tmp, 'upd-' + published), CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_UPDATE_URL: 'data:application/json,' + encodeURIComponent(JSON.stringify({ version: published })) }
+    delete env.VIBESHIP_NO_UPDATE_CHECK
+    const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], { env, stdio: 'ignore' })
+    try {
+      for (let i = 0; i < 50; i++) { try { if ((await fetch('http://127.0.0.1:' + port + '/api/ping')).ok) break } catch {} await new Promise((r) => setTimeout(r, 100)) }
+      const tok = fs.readFileSync(path.join(tmp, 'upd-' + published, 'token'), 'utf8').trim()
+      let u
+      for (let i = 0; i < 20; i++) { u = (await (await fetch('http://127.0.0.1:' + port + '/api/poll?session=x', { headers: { 'x-token': tok } })).json()).update; if (u) break; await new Promise((r) => setTimeout(r, 100)) }
+      return u
+    } finally { srv.kill() }
+  }
+  assert.deepEqual(await run('99.0.0'), { current, latest: '99.0.0' })
+  assert.equal(await run(current), undefined)
+  assert.equal(await run('0.0.1'), undefined)
+  assert.equal(await run('not-a-version'), undefined)
 })

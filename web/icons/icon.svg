@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Vibeship">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3680"/>
+      <stop offset="1" stop-color="#080c2b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4d7cff" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#4d7cff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cbd6f4"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.4" cy="0.35" r="0.8">
+      <stop offset="0" stop-color="#8defff"/>
+      <stop offset="1" stop-color="#2f86e0"/>
+    </radialGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd24a"/>
+      <stop offset="1" stop-color="#ff6a2e"/>
+    </linearGradient>
+    <radialGradient id="planet" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0" stop-color="#ffd9a0"/>
+      <stop offset="1" stop-color="#e8794a"/>
+    </radialGradient>
+    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
+    <clipPath id="hull">
+      <path d="M256 50 C322 98 350 190 340 318 Q338 336 320 336 L192 336 Q174 336 172 318 C162 190 190 98 256 50 Z"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <circle cx="250" cy="250" r="230" fill="url(#glow)"/>
+
+    <!-- stelle -->
+    <g fill="#ffffff">
+      <circle cx="74" cy="86" r="4"/><circle cx="140" cy="52" r="2.5"/><circle cx="52" cy="176" r="2.5"/>
+      <circle cx="156" cy="132" r="2"/><circle cx="446" cy="84" r="3.5" fill="#9fe8ff"/><circle cx="478" cy="178" r="2.5"/>
+      <circle cx="400" cy="40" r="2"/><circle cx="60" cy="330" r="2.5" fill="#ffb0e0"/><circle cx="110" cy="440" r="2"/>
+    </g>
+
+    <!-- pianeta con anello -->
+    <g transform="translate(424 428)">
+      <circle r="52" fill="url(#planet)"/>
+      <ellipse rx="86" ry="18" fill="none" stroke="#f5e1b0" stroke-width="9" transform="rotate(-24)" opacity="0.9"/>
+      <path d="M-62 14 A52 52 0 0 0 40 34" fill="none" stroke="#c9602e" stroke-width="0" />
+    </g>
+
+    <!-- razzo -->
+    <g transform="translate(256 262) rotate(42) scale(0.86) translate(-256 -262)">
+      <!-- pinne -->
+      <path d="M176 262 C136 292 112 332 108 392 L176 350 Z" fill="#ff5a6a"/>
+      <path d="M336 262 C376 292 400 332 404 392 L336 350 Z" fill="#e0475a"/>
+      <!-- fiamma -->
+      <path d="M214 344 C220 402 244 432 256 466 C268 432 292 402 298 344 Z" fill="url(#flame)"/>
+      <path d="M233 344 C238 380 250 398 256 416 C262 398 274 380 279 344 Z" fill="#fff3b0"/>
+      <rect x="208" y="326" width="96" height="26" rx="8" fill="#58648a"/>
+      <!-- scafo -->
+      <path d="M256 50 C322 98 350 190 340 318 Q338 336 320 336 L192 336 Q174 336 172 318 C162 190 190 98 256 50 Z" fill="url(#body)"/>
+      <g clip-path="url(#hull)">
+        <path d="M256 50 C322 98 350 190 340 318 L336 336 L282 336 C306 220 296 120 256 50 Z" fill="#a9b9e8" opacity="0.55"/>
+        <path d="M256 40 C296 76 316 112 326 148 L186 148 C196 112 216 76 256 40 Z" fill="#ff5a6a"/>
+        <rect x="160" y="148" width="190" height="12" fill="#e0475a"/>
+        <rect x="160" y="298" width="190" height="16" fill="#4de0ff"/>
+      </g>
+      <!-- oblo' con il gatto-astronauta -->
+      <circle cx="256" cy="222" r="68" fill="#2a3a7a"/>
+      <circle cx="256" cy="222" r="68" fill="none" stroke="#b9c6ee" stroke-width="16"/>
+      <circle cx="256" cy="222" r="54" fill="url(#glass)"/>
+      <path d="M222 200 L226 170 L248 192 Z" fill="#f2a65a"/>
+      <path d="M290 200 L286 170 L264 192 Z" fill="#f2a65a"/>
+      <path d="M228 194 L230 178 L242 190 Z" fill="#f7b6bb"/>
+      <path d="M284 194 L282 178 L270 190 Z" fill="#f7b6bb"/>
+      <circle cx="256" cy="232" r="40" fill="#f2a65a"/>
+      <ellipse cx="243" cy="228" rx="5.5" ry="7.5" fill="#2a1f1f"/>
+      <ellipse cx="269" cy="228" rx="5.5" ry="7.5" fill="#2a1f1f"/>
+      <circle cx="245" cy="225" r="2.2" fill="#fff"/><circle cx="271" cy="225" r="2.2" fill="#fff"/>
+      <ellipse cx="256" cy="241" rx="5" ry="3.5" fill="#f08a98"/>
+      <circle cx="233" cy="243" r="7" fill="#ff9fb2" opacity="0.7"/><circle cx="279" cy="243" r="7" fill="#ff9fb2" opacity="0.7"/>
+      <path d="M250 247 q6 6 12 0" fill="none" stroke="#7a4a2a" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M216 196 A52 52 0 0 1 250 172" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" opacity="0.6"/>
+    </g>
+  </g>
+</svg>

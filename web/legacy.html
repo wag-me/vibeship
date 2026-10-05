@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibeship</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0a1034">
+<style>
+  :root {
+    --bg: #cfe8c4; --panel: #fff8e4; --ink: #5b4636; --muted: #8d7a62; --line: #e8d9b5; --accent: #5cb88a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #25332a; --panel: #2f3a30; --ink: #f6ecd2; --muted: #b9ae92; --line: #46543f; --accent: #7fd1a4; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.4 'Nunito', 'Varela Round', 'Trebuchet MS', 'Segoe UI Rounded', system-ui, sans-serif; display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  h1 { font-size: 18px; margin: 0 8px 0 0; }
+  h1::before { content: '\1F343 '; }
+  .group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .group > span { color: var(--muted); font-size: 12px; margin-right: 2px; }
+  button { font: inherit; color: var(--ink); background: transparent; border: 2px solid var(--line); border-radius: 999px; padding: 5px 14px; cursor: pointer; font-weight: 700; }
+  button:hover { border-color: var(--accent); }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 3px 0 rgba(0,0,0,.18); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.danger:hover { border-color: #c0483f; color: #c0483f; }
+  main { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; }
+  svg#scene { aspect-ratio: 960 / 560; width: auto; height: auto; max-width: 100%; max-height: 100%; border-radius: 28px; border: 6px solid #fff8e4; box-shadow: 0 6px 0 rgba(0,0,0,.18); background: #000; touch-action: none; }
+  .station { cursor: grab; filter: saturate(.9) brightness(1.06) drop-shadow(0 4px 0 rgba(90,60,30,.22)); }
+  .station.dragging { cursor: grabbing; opacity: .85; }
+  .sel { fill: none; stroke: #ffffff; stroke-width: 4; stroke-dasharray: 2 9; stroke-linecap: round; }
+  .villager { cursor: pointer; }
+  .villager:hover .body { filter: brightness(1.08); }
+  .villager:focus-visible { outline: none; }
+  .villager:focus-visible .tg { stroke: #ffd84a; stroke-width: 4; }
+  #card { position: fixed; right: 24px; bottom: 56px; width: min(340px, calc(100vw - 32px)); background: var(--panel); color: var(--ink); border: 3px solid var(--accent); border-radius: 22px; padding: 14px 16px; box-shadow: 0 6px 0 rgba(0,0,0,.2); }
+  #card[hidden] { display: none; }
+  #card h2 { margin: 0 0 2px; font-size: 16px; }
+  #card .st { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  #card form { display: flex; gap: 6px; }
+  #card input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: transparent; border: 2px solid var(--line); border-radius: 999px; padding: 6px 12px; }
+  #card input:focus-visible { outline: 2px solid var(--accent); border-color: var(--accent); }
+  #card .row { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+  #card .close { position: absolute; right: 10px; top: 8px; padding: 0 9px; }
+  #card .note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  #toast { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); background: var(--ink); color: var(--panel); border-radius: 999px; padding: 6px 16px; font-weight: 700; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.on { opacity: 1; }
+  footer { padding: 8px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); background: var(--panel); display: flex; gap: 16px; flex-wrap: wrap; }
+  #conn::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #c0483f; margin-right: 6px; }
+  #conn.ok::before { background: #3aa76d; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Vibeship</h1>
+  <div class="group" id="scenes" role="group" aria-label="Scenario"><span>Scenario</span></div>
+  <div class="group" id="palette" role="group" aria-label="Aggiungi"><span>Aggiungi</span></div>
+  <div class="group"><button id="del" class="danger" disabled>Rimuovi selezionato</button><button id="reset">Ripristina scenario</button></div>
+</header>
+<main>
+  <svg id="scene" viewBox="0 0 960 560" role="img" aria-label="Spazio di lavoro degli agenti">
+    <g id="bg"></g>
+    <g id="stations"></g>
+    <g id="agents"></g>
+  </svg>
+</main>
+<div id="card" role="dialog" aria-label="Agente" hidden>
+  <button class="close" id="card-close" aria-label="Chiudi">×</button>
+  <h2 id="card-name"></h2>
+  <div class="st" id="card-status"></div>
+  <form id="card-form" autocomplete="off">
+    <input id="card-text" placeholder="Scrivi a Claude…" maxlength="2000" aria-label="Messaggio per Claude">
+    <button type="submit" aria-pressed="true">Invia</button>
+  </form>
+  <div class="row"><button id="card-stop" class="danger">Ferma il lavoro</button></div>
+  <div class="note" id="card-note"></div>
+</div>
+<div id="toast" role="status"></div>
+<footer>
+  <span id="conn">in attesa del server…</span>
+  <span id="count"></span>
+  <span>Trascina le postazioni per spostarle · Canc per rimuovere la selezionata</span>
+</footer>
+
+<script>
+const NS = 'http://www.w3.org/2000/svg'
+const W = 960, H = 560, WALL = 110, GRID = 10
+
+// ---------- Stati degli agenti ----------
+const STATUS = {
+  idle: { icon: '💤', color: '#9aa0a6', text: 'a riposo' },
+  read: { icon: '📖', color: '#2fa3c7', text: 'legge' },
+  write: { icon: '⌨️', color: '#3aa76d', text: 'scrive' },
+  run: { icon: '💻', color: '#d99a1e', text: 'esegue' },
+  web: { icon: '🌐', color: '#a45bd0', text: 'cerca sul web' },
+  delegate: { icon: '📨', color: '#3a6ea5', text: 'delega' },
+}
+
+// ---------- Tipi di postazione per scenario ----------
+// work = un agente può sedersi qui. svg() disegna attorno a (0,0) in una cornice di circa 110x70.
+const box = (x, y, w, h, fill, extra = '') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${fill}" ${extra}/>`
+const T = {
+  office: {
+    desk: { label: 'Scrivania', work: true, w: 110, h: 70, svg: () =>
+      box(-52, -22, 104, 44, '#a9743f', 'stroke="#7d5229" stroke-width="2"') +
+      box(-18, -34, 36, 22, '#1d2430', 'stroke="#555" stroke-width="2"') + box(-14, -31, 28, 15, '#5fb4e8') + box(-4, -12, 8, 6, '#555') +
+      box(-26, 2, 52, 10, '#d9d4c8') },
+    board: { label: 'Lavagna', work: false, w: 120, h: 50, svg: () =>
+      box(-56, -22, 112, 44, '#f6f6f2', 'stroke="#777" stroke-width="3"') +
+      '<path d="M-44 -8 L-20 -14 L0 -2 L24 -16 L44 -6" stroke="#d6453d" stroke-width="3" fill="none"/>' +
+      '<path d="M-44 10 H30" stroke="#3a6ea5" stroke-width="3"/>' },
+    plant: { label: 'Pianta', work: false, w: 50, h: 70, svg: () =>
+      box(-14, 8, 28, 22, '#b5651d') + '<ellipse cx="0" cy="-6" rx="24" ry="22" fill="#3f9b57"/><ellipse cx="-10" cy="-16" rx="12" ry="14" fill="#52b36b"/>' },
+    sofa: { label: 'Divano', work: false, w: 130, h: 56, svg: () =>
+      box(-60, -22, 120, 24, '#7a5ca8') + box(-64, -6, 128, 28, '#8f70c0') + box(-64, -10, 14, 32, '#6b4f96') + box(50, -10, 14, 32, '#6b4f96') },
+    cooler: { label: 'Distributore', work: false, w: 40, h: 70, svg: () =>
+      box(-14, -10, 28, 40, '#e6eaee', 'stroke="#98a" stroke-width="2"') + '<rect x="-10" y="-34" width="20" height="26" rx="8" fill="#8fd0f0" opacity=".8"/>' },
+  },
+  garage: {
+    bench: { label: 'Banco da lavoro', work: true, w: 120, h: 70, svg: () =>
+      box(-56, -20, 112, 40, '#6d4b2f', 'stroke="#432" stroke-width="2"') + box(-52, 20, 8, 12, '#444') + box(44, 20, 8, 12, '#444') +
+      box(-36, -32, 20, 12, '#b33', 'stroke="#611" stroke-width="2"') + box(8, -28, 34, 8, '#888') + '<circle cx="30" cy="-30" r="6" fill="#bbb"/>' },
+    lift: { label: 'Ponte sollevatore', work: true, w: 130, h: 80, svg: () =>
+      box(-56, 8, 112, 10, '#d9b21e', 'stroke="#876" stroke-width="2"') +
+      '<path d="M-52 4 L-40 -22 L24 -22 L46 4 Z" fill="#c43a3a" stroke="#722" stroke-width="2"/>' +
+      '<circle cx="-30" cy="6" r="11" fill="#222"/><circle cx="30" cy="6" r="11" fill="#222"/>' +
+      box(-34, -18, 24, 12, '#bde3f5') },
+    toolcart: { label: 'Carrello attrezzi', work: false, w: 70, h: 60, svg: () =>
+      box(-28, -22, 56, 40, '#c73b3b', 'stroke="#722" stroke-width="2"') + box(-24, -14, 48, 6, '#8e2626') + box(-24, -2, 48, 6, '#8e2626') +
+      '<circle cx="-20" cy="24" r="6" fill="#222"/><circle cx="20" cy="24" r="6" fill="#222"/>' },
+    tires: { label: 'Gomme', work: false, w: 60, h: 60, svg: () =>
+      '<ellipse cx="0" cy="12" rx="26" ry="12" fill="#222"/><ellipse cx="0" cy="0" rx="26" ry="12" fill="#2d2d2d"/><ellipse cx="0" cy="-12" rx="26" ry="12" fill="#222"/><ellipse cx="0" cy="-12" rx="10" ry="4" fill="#666"/>' },
+    barrel: { label: 'Fusto', work: false, w: 40, h: 54, svg: () =>
+      box(-16, -24, 32, 48, '#2f6fa8', 'stroke="#123" stroke-width="2"') + box(-16, -10, 32, 4, '#1c4a73') + box(-16, 6, 32, 4, '#1c4a73') },
+  },
+  lab: {
+    console: { label: 'Console', work: true, w: 120, h: 70, svg: () =>
+      box(-56, -6, 112, 28, '#3b4a5a', 'stroke="#1c2630" stroke-width="2"') + box(-48, -32, 40, 28, '#101820', 'stroke="#789" stroke-width="2"') +
+      box(-44, -28, 32, 20, '#37d6a0') + box(6, -28, 40, 22, '#101820', 'stroke="#789" stroke-width="2"') + '<path d="M10 -12 L20 -20 L28 -14 L40 -24" stroke="#f5b942" stroke-width="2" fill="none"/>' },
+    rack: { label: 'Rack server', work: true, w: 70, h: 90, svg: () =>
+      box(-28, -40, 56, 80, '#2b323b', 'stroke="#111" stroke-width="2"') +
+      [-32, -18, -4, 10, 24].map((y, i) => box(-24, y, 48, 10, '#46515e') + `<circle cx="-16" cy="${y + 5}" r="2.5" fill="${i % 2 ? '#3aa76d' : '#f5b942'}"/>`).join('') },
+    tube: { label: 'Provette', work: false, w: 60, h: 60, svg: () =>
+      box(-24, 8, 48, 10, '#9aa') + [-14, 0, 14].map((x, i) => `<rect x="${x - 5}" y="-22" width="10" height="34" rx="5" fill="${['#e8546f', '#4ab0e8', '#7ad06b'][i]}" opacity=".85"/>`).join('') },
+    scope: { label: 'Microscopio', work: true, w: 70, h: 70, svg: () =>
+      box(-22, 18, 44, 8, '#556') + box(-4, -24, 8, 44, '#778') + '<path d="M-4 -24 L-22 -10" stroke="#556" stroke-width="8"/>' + '<circle cx="-24" cy="-8" r="6" fill="#222"/>' },
+  },
+}
+
+const SCENE_META = {
+  office: { label: 'Ufficio' },
+  garage: { label: 'Garage' },
+  lab: { label: 'Laboratorio' },
+}
+
+const DEFAULTS = {
+  office: [
+    ['desk', 210, 290], ['desk', 440, 290], ['desk', 670, 290], ['desk', 330, 450],
+    ['board', 480, 150], ['cooler', 80, 160], ['plant', 890, 170], ['sofa', 780, 470],
+  ],
+  garage: [
+    ['bench', 190, 280], ['bench', 400, 280], ['lift', 650, 300], ['toolcart', 90, 160],
+    ['tires', 880, 170], ['barrel', 800, 470], ['barrel', 850, 470],
+  ],
+  lab: [
+    ['console', 200, 280], ['console', 430, 280], ['rack', 700, 190], ['scope', 700, 400], ['tube', 100, 170],
+  ],
+}
+
+// ---------- Stato ----------
+let layout = { scene: 'office', scenes: {} }
+let agents = []
+let selected = null
+let dragging = null
+
+const svg = document.getElementById('scene')
+const gBg = document.getElementById('bg')
+const gSt = document.getElementById('stations')
+const gAg = document.getElementById('agents')
+
+function stationsOf(scene) {
+  if (!layout.scenes[scene]) {
+    layout.scenes[scene] = DEFAULTS[scene].map(([type, x, y], i) => ({ id: scene + '-d' + i, type, x, y }))
+  }
+  return layout.scenes[scene]
+}
+const el = (name, attrs = {}, html) => {
+  const e = document.createElementNS(NS, name)
+  for (const k in attrs) e.setAttribute(k, attrs[k])
+  if (html != null) e.innerHTML = html
+  return e
+}
+const snap = (v) => Math.round(v / GRID) * GRID
+
+// ---------- Sfondi ----------
+function drawBackground(scene) {
+  let s = ''
+  const dots = (c, gap, r, o = 0.5) => {
+    let d = ''
+    for (let x = gap / 2; x < W; x += gap) for (let y = WALL + gap / 2; y < H; y += gap) d += `<circle cx="${x + ((y / gap) % 2 ? gap / 2 : 0)}" cy="${y}" r="${r}" fill="${c}" opacity="${o}"/>`
+    return d
+  }
+  const wall = (c, c2, dc) => {
+    let d = `<rect width="${W}" height="${WALL}" fill="${c}"/>`
+    for (let x = 20; x < W; x += 40) for (let y = 18; y < WALL - 16; y += 36) d += `<circle cx="${x + ((y / 36) % 2 ? 20 : 0)}" cy="${y}" r="5" fill="${dc}" opacity=".55"/>`
+    return d + `<rect y="${WALL - 14}" width="${W}" height="14" fill="${c2}"/>`
+  }
+  const window_ = (x, y, w, h, trim) =>
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="#bfe9f7" stroke="${trim}" stroke-width="6"/>` +
+    `<path d="M${x + 14} ${y + h - 14} q${w / 4} -22 ${w / 2} -6 t${w / 2 - 28} -10" stroke="#fff" stroke-width="4" fill="none" opacity=".8" stroke-linecap="round"/>` +
+    `<line x1="${x + w / 2}" y1="${y}" x2="${x + w / 2}" y2="${y + h}" stroke="${trim}" stroke-width="5"/>`
+  if (scene === 'office') {
+    s += `<rect width="${W}" height="${H}" fill="#f2d9a7"/>`
+    for (let y = WALL; y < H; y += 46) s += `<rect y="${y}" width="${W}" height="44" fill="${((y - WALL) / 46) % 2 ? '#efd29a' : '#f5deb2'}" rx="4"/>`
+    s += wall('#fdeed0', '#c98f5a', '#f4b7a0')
+    for (const x of [90, 340, 590, 820]) s += window_(x, 18, 120, 64, '#b9793f')
+    s += `<ellipse cx="480" cy="410" rx="230" ry="92" fill="#f4a9a0" opacity=".55"/><ellipse cx="480" cy="410" rx="190" ry="72" fill="none" stroke="#fff" stroke-width="4" stroke-dasharray="4 12" stroke-linecap="round" opacity=".8"/>`
+  } else if (scene === 'garage') {
+    s += `<rect width="${W}" height="${H}" fill="#d7d3c8"/>` + dots('#bdb8aa', 56, 6, 0.6)
+    s += wall('#cfe3ea', '#8aa6b0', '#fff')
+    s += `<rect x="330" y="14" width="300" height="76" rx="14" fill="#f5c76a" stroke="#c8913a" stroke-width="6"/>`
+    for (let y = 30; y < 88; y += 16) s += `<line x1="340" y1="${y}" x2="620" y2="${y}" stroke="#d9a645" stroke-width="5" stroke-linecap="round"/>`
+    s += `<rect x="40" y="22" width="200" height="60" rx="12" fill="#a77b52"/>` + [0, 1, 2, 3, 4].map((i) => `<circle cx="${70 + i * 34}" cy="52" r="9" fill="${['#ef8a8a', '#f5d36a', '#8ec9ef', '#b9a1e8', '#8fd7a8'][i]}"/>`).join('')
+    s += `<ellipse cx="520" cy="468" rx="86" ry="30" fill="#8a7a66" opacity=".25"/><path d="M30 ${H - 24} H${W - 30}" stroke="#f5d36a" stroke-width="7" stroke-dasharray="26 18" stroke-linecap="round"/>`
+  } else {
+    s += `<rect width="${W}" height="${H}" fill="#d6f1e6"/>`
+    for (let x = 0; x < W; x += 48) for (let y = WALL; y < H; y += 48) if (((x + y) / 48) % 2 === 0) s += `<rect x="${x}" y="${y}" width="48" height="48" fill="#c4e8d9"/>`
+    s += wall('#a9dcd0', '#5fa99b', '#e9fff8')
+    for (const x of [60, 300, 540, 780]) s += `<rect x="${x}" y="20" width="130" height="62" rx="16" fill="#2d4b57" stroke="#e9fff8" stroke-width="5"/><path d="M${x + 14} 66 q18 -34 36 -10 t40 -14 t26 6" stroke="#9af0cf" stroke-width="4" fill="none" stroke-linecap="round"/>`
+    s += `<rect x="0" y="${H - 16}" width="${W}" height="16" fill="#f7c8dc" opacity=".8"/>`
+  }
+  gBg.innerHTML = s
+}
+
+// ---------- Postazioni ----------
+function drawStations() {
+  const scene = layout.scene
+  const list = stationsOf(scene)
+  gSt.innerHTML = ''
+  for (const st of [...list].sort((a, b) => a.y - b.y)) {
+    const def = T[scene][st.type]
+    if (!def) continue
+    const g = el('g', { class: 'station', transform: `translate(${st.x},${st.y})`, 'data-id': st.id, tabindex: '0', role: 'button', 'aria-label': def.label }, `<title>${def.label}</title>` + def.svg())
+    if (st.id === selected) g.appendChild(el('rect', { class: 'sel', x: -def.w / 2 - 4, y: -def.h / 2 - 4, width: def.w + 8, height: def.h + 8, rx: 8 }))
+    g.addEventListener('pointerdown', (ev) => startDrag(ev, st, g))
+    g.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { select(st.id); ev.preventDefault() }
+    })
+    gSt.appendChild(g)
+  }
+  document.getElementById('del').disabled = !selected
+}
+
+function toSvg(ev) {
+  const pt = svg.createSVGPoint()
+  pt.x = ev.clientX; pt.y = ev.clientY
+  return pt.matrixTransform(svg.getScreenCTM().inverse())
+}
+function select(id) { selected = id; drawStations() }
+
+function startDrag(ev, st, g) {
+  ev.preventDefault()
+  selected = st.id
+  const p = toSvg(ev)
+  dragging = { st, g, dx: st.x - p.x, dy: st.y - p.y, moved: false }
+  g.classList.add('dragging')
+  g.setPointerCapture(ev.pointerId)
+  document.getElementById('del').disabled = false
+  g.addEventListener('pointermove', onDrag)
+  g.addEventListener('pointerup', endDrag, { once: true })
+  g.addEventListener('pointercancel', endDrag, { once: true })
+}
+function onDrag(ev) {
+  if (!dragging) return
+  const p = toSvg(ev)
+  const def = T[layout.scene][dragging.st.type]
+  dragging.st.x = Math.min(W - def.w / 2, Math.max(def.w / 2, snap(p.x + dragging.dx)))
+  dragging.st.y = Math.min(H - def.h / 2, Math.max(WALL + def.h / 2 - 10, snap(p.y + dragging.dy)))
+  dragging.moved = true
+  dragging.g.setAttribute('transform', `translate(${dragging.st.x},${dragging.st.y})`)
+}
+function endDrag() {
+  const d = dragging
+  dragging = null
+  if (d) { d.g.removeEventListener('pointermove', onDrag); d.g.classList.remove('dragging') }
+  drawStations()
+  if (d && d.moved) saveLayout()
+}
+
+let saveTimer = null
+function saveLayout() {
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    fetch('/api/layout', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify(layout) }).catch(() => {})
+  }, 150)
+}
+
+function addStation(type) {
+  const list = stationsOf(layout.scene)
+  const def = T[layout.scene][type]
+  // Cerca un punto libero scorrendo la griglia
+  let pos = null
+  for (let y = 240; y < H - 40 && !pos; y += 70) {
+    for (let x = 130; x < W - 60; x += 100) {
+      if (!list.some((s) => Math.abs(s.x - x) < 80 && Math.abs(s.y - y) < 60)) { pos = { x, y }; break }
+    }
+  }
+  pos = pos || { x: 480, y: 300 }
+  const st = { id: layout.scene + '-' + Date.now().toString(36), type, x: pos.x, y: pos.y }
+  list.push(st)
+  selected = st.id
+  drawStations()
+  saveLayout()
+}
+
+function removeSelected() {
+  if (!selected) return
+  const list = stationsOf(layout.scene)
+  const i = list.findIndex((s) => s.id === selected)
+  if (i >= 0) list.splice(i, 1)
+  selected = null
+  drawStations()
+  saveLayout()
+}
+
+// ---------- UI ----------
+function buildControls() {
+  const gs = document.getElementById('scenes')
+  gs.querySelectorAll('button').forEach((b) => b.remove())
+  for (const id of Object.keys(SCENE_META)) {
+    const b = document.createElement('button')
+    b.textContent = SCENE_META[id].label
+    b.setAttribute('aria-pressed', String(id === layout.scene))
+    b.onclick = () => { layout.scene = id; selected = null; render(); saveLayout() }
+    gs.appendChild(b)
+  }
+  const gp = document.getElementById('palette')
+  gp.querySelectorAll('button').forEach((b) => b.remove())
+  for (const [type, def] of Object.entries(T[layout.scene])) {
+    const b = document.createElement('button')
+    b.textContent = '+ ' + def.label
+    b.title = def.work ? 'Postazione di lavoro: un agente può sedersi qui' : 'Arredo'
+    b.onclick = () => addStation(type)
+    gp.appendChild(b)
+  }
+}
+
+document.getElementById('del').onclick = removeSelected
+document.getElementById('reset').onclick = () => {
+  if (!confirm('Ripristinare le postazioni di questo scenario?')) return
+  delete layout.scenes[layout.scene]
+  selected = null
+  drawStations()
+  saveLayout()
+}
+addEventListener('keydown', (e) => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { removeSelected(); e.preventDefault() }
+})
+svg.addEventListener('pointerdown', (e) => { if (e.target === svg || gBg.contains(e.target)) select(null) })
+
+function render() {
+  drawBackground(layout.scene)
+  drawStations()
+  buildControls()
+}
+
+// ---------- Personaggi ----------
+const nodes = new Map() // key -> { g, x, y, color }
+const PALETTE = ['#f2a65a', '#8ec9ef', '#8fd7a8', '#e5a0d8', '#f5d36a', '#9ad6d0', '#f09aa8']
+const SPECIES = ['cat', 'bear', 'rabbit', 'frog', 'duck', 'mouse']
+const hashOf = (key) => { let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h }
+
+// Testa e dettagli per specie, centrati sulla testa
+function headSvg(species, fur) {
+  const ears = {
+    cat: `<path d="M-16 -22 L-14 -38 L-3 -27 Z" fill="${fur}"/><path d="M16 -22 L14 -38 L3 -27 Z" fill="${fur}"/><path d="M-13 -26 L-12 -33 L-7 -28 Z" fill="#f7b6bb"/><path d="M13 -26 L12 -33 L7 -28 Z" fill="#f7b6bb"/>`,
+    bear: `<circle cx="-14" cy="-28" r="7" fill="${fur}"/><circle cx="14" cy="-28" r="7" fill="${fur}"/><circle cx="-14" cy="-28" r="3.5" fill="#f7c9a6"/><circle cx="14" cy="-28" r="3.5" fill="#f7c9a6"/>`,
+    rabbit: `<ellipse cx="-8" cy="-40" rx="5" ry="15" fill="${fur}"/><ellipse cx="8" cy="-40" rx="5" ry="15" fill="${fur}"/><ellipse cx="-8" cy="-40" rx="2.5" ry="11" fill="#f7b6bb"/><ellipse cx="8" cy="-40" rx="2.5" ry="11" fill="#f7b6bb"/>`,
+    frog: `<circle cx="-10" cy="-28" r="7" fill="${fur}"/><circle cx="10" cy="-28" r="7" fill="${fur}"/>`,
+    duck: `<path d="M-3 -29 q3 -9 6 0" stroke="${fur}" stroke-width="3" fill="none" stroke-linecap="round"/>`,
+    mouse: `<circle cx="-15" cy="-26" r="9" fill="${fur}"/><circle cx="15" cy="-26" r="9" fill="${fur}"/><circle cx="-15" cy="-26" r="5" fill="#f7b6bb"/><circle cx="15" cy="-26" r="5" fill="#f7b6bb"/>`,
+  }[species]
+  const muzzle = species === 'duck'
+    ? `<ellipse cx="0" cy="-8" rx="8" ry="4.5" fill="#f5a53a"/>`
+    : `<ellipse cx="0" cy="-8" rx="7" ry="5" fill="#fff4e0"/><ellipse cx="0" cy="-10" rx="2.4" ry="1.7" fill="#5b4636"/>`
+  return `${ears}<ellipse cx="0" cy="-14" rx="19" ry="17" fill="${fur}"/>
+    <ellipse cx="0" cy="-5" rx="19" ry="8" fill="rgba(0,0,0,.18)" opacity=".35"/>
+    <ellipse cx="-12" cy="-8" rx="4.5" ry="3" fill="#f7a1a8" opacity=".75"/><ellipse cx="12" cy="-8" rx="4.5" ry="3" fill="#f7a1a8" opacity=".75"/>
+    <ellipse cx="-7" cy="-15" rx="3.2" ry="4.2" fill="#3b2a22"/><ellipse cx="7" cy="-15" rx="3.2" ry="4.2" fill="#3b2a22"/>
+    <circle cx="-6" cy="-16.6" r="1.2" fill="#fff"/><circle cx="8" cy="-16.6" r="1.2" fill="#fff"/>${muzzle}`
+}
+
+function makeAgentNode(a) {
+  const fur = a.kind === 'main' ? '#f2a65a' : PALETTE[hashOf(a.key) % PALETTE.length]
+  const species = a.kind === 'main' ? 'cat' : SPECIES[(hashOf(a.key) >>> 3) % SPECIES.length]
+  const shirt = a.kind === 'main' ? '#e9605a' : ['#7ec8a3', '#7aaee0', '#f0b86e', '#c79ae0'][(hashOf(a.key) >>> 5) % 4]
+  const g = el('g', {}, `
+    <ellipse cx="0" cy="26" rx="19" ry="6" fill="#5a3b1e" opacity=".25"/>
+    <g class="body">
+      <ellipse cx="-8" cy="25" rx="6" ry="4" fill="${fur}"/><ellipse cx="8" cy="25" rx="6" ry="4" fill="${fur}"/>
+      <path d="M-14 22 Q-16 4 0 3 Q16 4 14 22 Z" fill="${shirt}"/>
+      <ellipse class="hand l" cx="-15" cy="12" rx="4.5" ry="4.5" fill="${fur}"/>
+      <ellipse class="hand r" cx="15" cy="12" rx="4.5" ry="4.5" fill="${fur}"/>
+      ${headSvg(species, fur)}
+    </g>
+    <g class="bubble" transform="translate(0,-58)">
+      <rect class="bb" x="-62" y="-26" width="124" height="32" rx="16" fill="#fffdf4" stroke="#999" stroke-width="3"/>
+      <path d="M-6 5 L0 14 L6 5 Z" fill="#fffdf4"/><path class="tail" d="M-7 5 L0 15 L7 5" fill="none" stroke="#999" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+      <rect x="-5" y="2" width="10" height="5" fill="#fffdf4"/>
+      <text class="bi" x="-52" y="-4" font-size="16">💤</text>
+      <text class="bt" x="-30" y="-4" font-size="12" font-weight="700" fill="#5b4636"></text>
+    </g>
+    <g class="tag" transform="translate(0,42)"><rect class="tg" x="-40" y="-11" width="80" height="20" rx="10" fill="#7ec8a3" stroke="#fffdf4" stroke-width="2.5"/>
+      <text class="nm" x="0" y="4" text-anchor="middle" font-size="12" font-weight="800" fill="#fff"></text></g>`)
+  g.setAttribute('class', 'villager')
+  g.setAttribute('tabindex', '0')
+  g.setAttribute('role', 'button')
+  g.setAttribute('aria-label', 'Apri la scheda di ' + a.name)
+  g.addEventListener('click', () => openCard(a.key))
+  g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openCard(a.key) } })
+  gAg.appendChild(g)
+  return { g, x: 480, y: H - 30, color: fur, moving: false, jump: 0 }
+}
+
+function syncAgents() {
+  const keys = new Set(agents.map((a) => a.key))
+  for (const [k, n] of nodes) if (!keys.has(k)) { n.g.remove(); nodes.delete(k) }
+  for (const a of agents) if (!nodes.has(a.key)) nodes.set(a.key, makeAgentNode(a))
+  document.getElementById('count').textContent = agents.length + (agents.length === 1 ? ' agente' : ' agenti')
+}
+
+function targets() {
+  const work = stationsOf(layout.scene).filter((s) => T[layout.scene][s.type]?.work).sort((a, b) => a.y - b.y || a.x - b.x)
+  const ordered = [...agents].sort((a, b) => (a.kind === 'main' ? -1 : 0) - (b.kind === 'main' ? -1 : 0) || a.key.localeCompare(b.key))
+  const out = new Map()
+  ordered.forEach((a, i) => {
+    const s = work[i]
+    out.set(a.key, s ? { x: s.x, y: s.y + (T[layout.scene][s.type].h / 2 + 6), seated: true } : { x: 90 + (i - work.length) * 70, y: H - 36, seated: false })
+  })
+  return out
+}
+
+function frame(t) {
+  const tg = targets()
+  for (const a of agents) {
+    const n = nodes.get(a.key)
+    if (!n) continue
+    const goal = tg.get(a.key)
+    const dx = goal.x - n.x, dy = goal.y - n.y
+    const dist = Math.hypot(dx, dy)
+    n.moving = dist > 2
+    if (n.moving) { const step = Math.min(dist, 3.2); n.x += (dx / dist) * step; n.y += (dy / dist) * step }
+    const st = STATUS[a.status] || STATUS.idle
+    const working = !n.moving && a.status !== 'idle' && goal.seated
+    const bob = n.moving ? Math.abs(Math.sin(t / 90)) * -5 : (working ? Math.sin(t / 220) * -1.5 : Math.sin(t / 700) * -1)
+    const jp = n.jump ? (t - n.jump < 450 ? -Math.abs(Math.sin((t - n.jump) / 450 * Math.PI * 2)) * 14 : 0) : 0
+    n.g.setAttribute('transform', `translate(${n.x.toFixed(1)},${(n.y + bob + jp).toFixed(1)})`)
+    const hl = n.g.querySelector('.hand.l'), hr = n.g.querySelector('.hand.r')
+    const typing = working && (a.status === 'write' || a.status === 'run')
+    hl.setAttribute('y', typing ? 6 + Math.sin(t / 70) * 3 : 6)
+    hr.setAttribute('y', typing ? 6 + Math.cos(t / 70) * 3 : 6)
+    const bub = n.g.querySelector('.bubble')
+    bub.style.opacity = a.status === 'idle' && !a.detail ? '0.75' : '1'
+    n.g.querySelector('.bi').textContent = st.icon
+    const label = a.detail ? a.detail : st.text
+    n.g.querySelector('.bt').textContent = label.length > 14 ? label.slice(0, 13) + '…' : label
+    n.g.querySelector('.bb').setAttribute('stroke', st.color)
+    n.g.querySelector('.tail').setAttribute('stroke', st.color)
+    n.g.querySelector('.nm').textContent = a.name
+    const wTag = Math.max(54, a.name.length * 8 + 22)
+    const tagEl = n.g.querySelector('.tg')
+    tagEl.setAttribute('width', wTag); tagEl.setAttribute('x', -wTag / 2)
+    tagEl.setAttribute('fill', a.kind === 'main' ? '#e9605a' : '#7ec8a3')
+  }
+  requestAnimationFrame(frame)
+}
+
+// ---------- Scheda dell'agente (chat / stop) ----------
+const qs = new URLSearchParams(location.search)
+let TOKEN = qs.get('t') || ''
+try {
+  if (TOKEN) sessionStorage.setItem('ao-token', TOKEN)
+  else TOKEN = sessionStorage.getItem('ao-token') || ''
+} catch {}
+if (qs.has('t')) history.replaceState(null, '', location.pathname) // toglie il token dall'indirizzo
+
+const card = document.getElementById('card')
+let cardKey = null
+let toastTimer = null
+function toast(msg) {
+  const t = document.getElementById('toast')
+  t.textContent = msg
+  t.classList.add('on')
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => t.classList.remove('on'), 2600)
+}
+function openCard(key) { cardKey = key; updateCard(true) }
+function closeCard() { cardKey = null; card.hidden = true }
+function updateCard(focus) {
+  const a = agents.find((x) => x.key === cardKey)
+  if (!a) { if (cardKey) closeCard(); return }
+  const st = STATUS[a.status] || STATUS.idle
+  document.getElementById('card-name').textContent = (a.kind === 'main' ? '🐱 ' : '🐾 ') + a.name
+  document.getElementById('card-status').textContent = st.icon + ' ' + st.text + (a.detail ? ' · ' + a.detail : '')
+  const isMain = a.kind === 'main'
+  document.getElementById('card-form').style.display = isMain ? '' : 'none'
+  document.getElementById('card-stop').style.display = isMain ? '' : 'none'
+  document.getElementById('card-note').textContent = isMain
+    ? (TOKEN ? 'Il messaggio arriva a Claude come se lo scrivessi tu nel terminale.' : 'Apri questa finestra con /vibeship per abilitare chat e stop.')
+    : 'I subagenti non ricevono messaggi: parla con Claude, che li coordina.'
+  const wasHidden = card.hidden
+  card.hidden = false
+  if (focus && isMain && wasHidden !== undefined) document.getElementById('card-text').focus()
+}
+async function sendCommand(kind, text) {
+  const a = agents.find((x) => x.key === cardKey)
+  if (!a) return
+  if (!TOKEN) { toast('Apri la finestra con /vibeship per inviare comandi'); return }
+  try {
+    const r = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: a.session, kind, text }) })
+    if (r.status === 401) toast('Token scaduto: riapri la finestra con /vibeship')
+    else if (!r.ok) toast('Comando non valido')
+    else {
+      toast(kind === 'say' ? 'Messaggio inviato ✉️' : 'Stop inviato ✋')
+      const n = nodes.get(a.key); if (n) n.jump = performance.now()
+    }
+  } catch { toast('Server non raggiungibile') }
+}
+document.getElementById('card-close').onclick = closeCard
+document.getElementById('card-stop').onclick = () => sendCommand('stop')
+document.getElementById('card-form').onsubmit = (ev) => {
+  ev.preventDefault()
+  const inp = document.getElementById('card-text')
+  const text = inp.value.trim()
+  if (!text) return
+  sendCommand('say', text)
+  inp.value = ''
+}
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && cardKey) closeCard() })
+
+// ---------- Collegamento al server ----------
+const conn = document.getElementById('conn')
+function connect() {
+  const es = new EventSource('/stream')
+  es.onopen = () => { conn.className = 'ok'; conn.textContent = 'collegato' }
+  es.onerror = () => { conn.className = ''; conn.textContent = 'server non raggiungibile, riprovo…' }
+  es.onmessage = (m) => {
+    const data = JSON.parse(m.data)
+    agents = data.agents
+    syncAgents()
+    if (cardKey) updateCard(false)
+    if (!dragging && data.layout && data.layout.scenes) {
+      const sceneChanged = data.layout.scene !== layout.scene
+      layout = { scene: data.layout.scene || layout.scene, scenes: data.layout.scenes }
+      if (sceneChanged || !gBg.firstChild) { render() } else { drawStations() }
+    } else if (!gBg.firstChild) { render() }
+  }
+}
+
+render()
+connect()
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

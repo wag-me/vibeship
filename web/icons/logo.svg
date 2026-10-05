@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 240" role="img" aria-label="Vibeship">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b3680"/><stop offset="1" stop-color="#080c2b"/></linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cbd6f4"/></linearGradient>
+    <radialGradient id="glass" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#8defff"/><stop offset="1" stop-color="#2f86e0"/></radialGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd24a"/><stop offset="1" stop-color="#ff6a2e"/></linearGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4de0ff"/><stop offset="1" stop-color="#b08cff"/></linearGradient>
+    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
+    <clipPath id="hull"><path d="M256 50 C322 98 350 190 340 318 Q338 336 320 336 L192 336 Q174 336 172 318 C162 190 190 98 256 50 Z"/></clipPath>
+  </defs>
+  <!-- marchio -->
+  <g transform="scale(0.4688)">
+    <g clip-path="url(#tile)">
+      <rect width="512" height="512" fill="url(#bg)"/>
+      <g fill="#ffffff"><circle cx="86" cy="96" r="8"/><circle cx="440" cy="76" r="7" fill="#9fe8ff"/><circle cx="76" cy="400" r="6"/><circle cx="450" cy="420" r="8"/></g>
+      <g transform="translate(256 262) rotate(42) scale(1.02) translate(-256 -262)">
+        <path d="M176 262 C136 292 112 332 108 392 L176 350 Z" fill="#ff5a6a"/>
+        <path d="M336 262 C376 292 400 332 404 392 L336 350 Z" fill="#e0475a"/>
+        <path d="M214 344 C220 402 244 432 256 466 C268 432 292 402 298 344 Z" fill="url(#flame)"/>
+        <rect x="208" y="326" width="96" height="26" rx="8" fill="#58648a"/>
+        <path d="M256 50 C322 98 350 190 340 318 Q338 336 320 336 L192 336 Q174 336 172 318 C162 190 190 98 256 50 Z" fill="url(#body)"/>
+        <g clip-path="url(#hull)"><path d="M256 40 C296 76 316 112 326 148 L186 148 C196 112 216 76 256 40 Z" fill="#ff5a6a"/><rect x="160" y="298" width="190" height="16" fill="#4de0ff"/></g>
+        <circle cx="256" cy="226" r="72" fill="#2a3a7a"/><circle cx="256" cy="226" r="72" fill="none" stroke="#b9c6ee" stroke-width="18"/>
+        <circle cx="256" cy="226" r="56" fill="url(#glass)"/>
+        <path d="M220 204 L224 168 L250 194 Z" fill="#f2a65a"/><path d="M292 204 L288 168 L262 194 Z" fill="#f2a65a"/>
+        <circle cx="256" cy="236" r="42" fill="#f2a65a"/>
+        <ellipse cx="242" cy="231" rx="6.5" ry="9" fill="#2a1f1f"/><ellipse cx="270" cy="231" rx="6.5" ry="9" fill="#2a1f1f"/>
+        <ellipse cx="256" cy="246" rx="6" ry="4" fill="#f08a98"/>
+      </g>
+    </g>
+  </g>
+  <!-- scritta -->
+  <text x="270" y="150" font-family="'Trebuchet MS','Segoe UI Rounded','Varela Round',system-ui,sans-serif" font-size="128" font-weight="900" letter-spacing="-2" fill="url(#word)">Vibeship</text>
+  <text x="274" y="196" font-family="'Trebuchet MS','Segoe UI Rounded',system-ui,sans-serif" font-size="30" font-weight="700" letter-spacing="3" fill="#8d9bd0">I TUOI AGENTI, IN ORBITA</text>
+</svg>

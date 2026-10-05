@@ -1,0 +1,17 @@
+# Copia vecchia lasciata dalla copia automatica del workspace: non fa parte del progetto
+/agent-office/
+
+# Generati da Claude Code a ogni caricamento della mod
+/.claude-plugin/types/
+/tsconfig.json
+
+# Dipendenze e rumore
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# Dati locali di Vibeship (token, layout) stanno nella cartella utente, ma per sicurezza:
+.claude-agent-office/
+launch-*.cmd
+launch-*.command

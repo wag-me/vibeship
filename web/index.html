@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibeship</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0a1034">
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/three.module.js" } }
+</script>
+<style>
+  :root {
+    --cream: #eef3ff; --cream2: #dbe5fb; --ink: #2b3558; --muted: #6b7aa6; --line: #c6d4f2;
+    --leaf: #2fbfae; --leaf-d: #1f9a8c; --berry: #ff6b8a; --sun: #ffcf5a; --sky: #6fc9ff;
+    --shadow: 0 5px 0 rgba(20, 30, 70, .35);
+  }
+  * { box-sizing: border-box; }
+
+  /* ---- Barre di scorrimento a tema: sottili, arrotondate, stesso verde acqua dei pulsanti ---- */
+  *::-webkit-scrollbar { width: 14px; height: 14px; }
+  *::-webkit-scrollbar-track { background: var(--cream2); border-radius: 999px; margin: 8px 0; box-shadow: inset 0 0 0 3px var(--cream); }
+  *::-webkit-scrollbar-thumb { background: var(--leaf); border-radius: 999px; border: 3px solid var(--cream); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .16); min-height: 40px; }
+  *::-webkit-scrollbar-thumb:hover { background: #4fd6c5; }
+  *::-webkit-scrollbar-thumb:active { background: var(--leaf-d); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+  /* i browser senza ::-webkit-scrollbar (es. Firefox) usano le proprietà standard */
+  @supports not selector(::-webkit-scrollbar) {
+    * { scrollbar-width: thin; scrollbar-color: var(--leaf) var(--cream2); }
+  }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body { background: #03041a; color: var(--ink); font: 700 14px/1.35 'Nunito', 'Varela Round', 'Trebuchet MS', 'Segoe UI Rounded', system-ui, sans-serif; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+
+  #stage { position: fixed; inset: 0; }
+  canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; transition: opacity .28s ease, filter .28s ease; }
+  canvas#gl.fade { opacity: 0; filter: blur(6px); }
+  #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+  /* ---- Barra superiore ---- */
+  header { position: absolute; z-index: 5; left: 14px; right: 14px; top: 12px; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; pointer-events: none; }
+  header > * { pointer-events: auto; }
+  .brand { display: flex; align-items: center; gap: 8px; background: var(--cream); border: 3px solid #fff; border-radius: 999px; padding: 6px 16px 6px 10px; box-shadow: var(--shadow); font-size: 17px; font-weight: 900; }
+  .brand img { display: block; width: 34px; height: 34px; border-radius: 10px; box-shadow: 0 2px 0 rgba(20,30,70,.3); animation: sway 3.6s ease-in-out infinite; transform-origin: 50% 90%; }
+  @keyframes sway { 50% { transform: rotate(14deg); } }
+  .dock { display: flex; gap: 6px; background: var(--cream); border: 3px solid #fff; border-radius: 999px; padding: 5px; box-shadow: var(--shadow); }
+  .btn { position: relative; display: inline-flex; align-items: center; gap: 6px; background: var(--cream2); border: 0; border-radius: 999px; padding: 7px 14px; font-weight: 800; box-shadow: 0 3px 0 rgba(120,85,40,.2); transition: transform .08s, box-shadow .08s, background .15s; }
+  .btn:hover { background: #fff; transform: translateY(-1px); }
+  .btn:active { transform: translateY(3px); box-shadow: 0 0 0 rgba(0,0,0,0); }
+  .btn[aria-pressed="true"] { background: var(--leaf); color: #fff; box-shadow: 0 3px 0 var(--leaf-d); }
+  .btn.primary { background: var(--sun); box-shadow: 0 3px 0 #d9a63f; }
+  .btn.danger:hover { background: #ffd9d9; }
+  .btn[disabled] { opacity: .45; pointer-events: none; }
+  .btn .ic { font-size: 16px; line-height: 1; }
+  .btn.sq { padding: 7px 10px; }
+  .btn[data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; transform: translate(-50%, -4px); background: var(--ink); color: #fff6e0; border-radius: 10px; padding: 3px 9px; font-size: 12px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; }
+  .btn[data-tip]:hover::after, .btn[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+  .spacer { flex: 1; }
+
+  /* ---- Catalogo ---- */
+  #catalog { position: absolute; z-index: 6; left: 14px; top: 70px; width: min(460px, calc(100vw - 28px)); max-height: calc(100vh - 150px); display: flex; flex-direction: column; background: var(--cream); border: 4px solid #fff; border-radius: 26px; box-shadow: 0 8px 0 rgba(120,85,40,.25); transform-origin: 30px -10px; transition: transform .18s cubic-bezier(.3,1.6,.5,1), opacity .15s; }
+  #catalog[hidden] { display: flex; opacity: 0; transform: scale(.85); pointer-events: none; visibility: hidden; }
+  #catalog h2 { margin: 0; font-size: 16px; padding: 12px 16px 6px; display: flex; align-items: center; justify-content: space-between; }
+  .tabs { display: flex; gap: 6px; padding: 4px 12px 10px; flex-wrap: wrap; }
+  .grid { overflow: auto; padding: 4px 12px 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px 8px; background: #fff; border: 3px solid var(--line); border-radius: 20px; box-shadow: 0 3px 0 rgba(120,85,40,.16); transition: transform .1s, border-color .15s; text-align: center; }
+  .card:hover { transform: translateY(-3px) rotate(-1deg); border-color: var(--leaf); }
+  .card:active { transform: translateY(1px); }
+  .card img, .card .ph { width: 92px; height: 92px; object-fit: contain; border-radius: 14px; background: radial-gradient(circle at 50% 70%, #fff3d6, #ffe6b8); }
+  .card .ph { display: grid; place-items: center; font-size: 28px; opacity: .6; }
+  .card span { font-size: 12.5px; }
+
+  /* ---- Nuovo agente ---- */
+  #spawn { position: absolute; z-index: 6; left: 14px; top: 70px; width: min(460px, calc(100vw - 28px)); max-height: calc(100vh - 150px); overflow: auto; background: var(--cream); border: 4px solid #fff; border-radius: 26px; box-shadow: 0 8px 0 rgba(120,85,40,.25); padding: 4px 16px 16px; animation: pop .2s cubic-bezier(.3,1.6,.5,1); }
+  #spawn[hidden] { display: none; }
+  #spawn h2 { margin: 0; font-size: 16px; padding: 10px 0 2px; display: flex; align-items: center; justify-content: space-between; }
+  #spawn .hint { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; }
+  .fld { display: block; font-size: 12.5px; color: var(--muted); margin: 8px 0 2px; }
+  .fld input { display: block; width: 100%; margin-top: 3px; font: inherit; color: var(--ink); background: #fff; border: 3px solid var(--line); border-radius: 999px; padding: 6px 14px; }
+  .fld input:focus-visible { border-color: var(--leaf); outline: none; }
+  .fld .inline { display: flex; gap: 6px; margin-top: 3px; }
+  .fld .inline input { margin-top: 0; flex: 1; min-width: 0; }
+  .locs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .chipbtn[aria-pressed="true"] { background: var(--leaf); border-color: var(--leaf); color: #fff; }
+  .movebar { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .movebar::before { content: 'Luogo'; color: var(--muted); font-size: 12px; width: 100%; }
+  .movebar .btn { padding: 4px 11px; font-size: 12.5px; }
+  .badge { background: var(--berry); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; font-weight: 900; line-height: 1.5; box-shadow: 0 2px 0 rgba(0,0,0,.2); }
+  .badge.ring { animation: ring 1s ease-in-out infinite; transform-origin: 50% 20%; }
+  .btn.drop { outline: 3px dashed var(--sun); outline-offset: 2px; transform: translateY(-2px); background: #fff; }
+  .newproj { margin: 2px 0 10px; }
+  #np-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  #np-form[hidden] { display: none; }
+  #np-form input[type="text"], #np-name { flex: 1; min-width: 150px; font: inherit; color: var(--ink); background: #fff; border: 3px solid var(--line); border-radius: 999px; padding: 6px 14px; }
+  #np-name:focus-visible { border-color: var(--leaf); outline: none; }
+  .chk { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); }
+  .chk input { accent-color: var(--leaf); width: 16px; height: 16px; }
+  .species { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 4px; }
+  .sp-opt { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 2px 4px; background: #fff; border: 3px solid var(--line); border-radius: 16px; font: inherit; font-size: 11.5px; font-weight: 800; color: var(--ink); cursor: pointer; transition: transform .1s, border-color .15s; }
+  .sp-opt:hover { transform: translateY(-2px); border-color: var(--leaf); }
+  .sp-opt[aria-pressed="true"] { border-color: var(--leaf); background: #eaf8f0; box-shadow: 0 3px 0 var(--leaf-d); }
+  .sp-opt img, .sp-opt .ph { width: 56px; height: 56px; object-fit: contain; display: grid; place-items: center; font-size: 26px; }
+  .shirts { display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+  .shirts::before { content: 'Divisa'; color: var(--muted); font-size: 12px; margin-right: 2px; }
+  .dot { width: 24px; height: 24px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 2px var(--line); cursor: pointer; padding: 0; }
+  .dot[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--ink); transform: scale(1.12); }
+  .recent { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
+  .recent:empty { display: none; }
+  .chipbtn { background: #fff; border: 2px solid var(--line); border-radius: 999px; padding: 2px 11px; font: inherit; font-size: 12px; font-weight: 800; }
+  .chipbtn:hover { border-color: var(--leaf); }
+  .dirs { margin: 10px 0; max-height: 200px; overflow: auto; background: #fff; border: 3px solid var(--line); border-radius: 18px; padding: 4px; display: flex; flex-direction: column; }
+  .dirs button { text-align: left; background: transparent; border: 0; border-radius: 12px; padding: 5px 10px; font: inherit; font-weight: 700; font-size: 13px; }
+  .dirs button:hover, .dirs button:focus-visible { background: var(--cream2); }
+  .dirs .none { color: var(--muted); padding: 8px 10px; font-size: 12.5px; }
+  #spawn .go { width: 100%; justify-content: center; }
+
+  /* ---- Scheda agente ---- */
+  #card { position: absolute; z-index: 6; right: 14px; bottom: 62px; width: min(350px, calc(100vw - 28px)); background: var(--cream); border: 4px solid #fff; border-radius: 26px; padding: 14px 16px 12px; box-shadow: 0 8px 0 rgba(120,85,40,.25); animation: pop .22s cubic-bezier(.3,1.6,.5,1); }
+  #card[hidden] { display: none; }
+  @keyframes pop { from { transform: scale(.85) translateY(12px); opacity: 0; } }
+  #card h2 { margin: 0; font-size: 17px; padding-right: 30px; }
+  #card .sp { color: var(--muted); font-size: 12.5px; font-weight: 700; }
+  #card .st { margin: 8px 0 10px; display: flex; gap: 8px; align-items: center; background: #fff; border-radius: 16px; padding: 7px 12px; border: 2px solid var(--line); }
+  #card .st .big { font-size: 22px; }
+  #card form { display: flex; gap: 6px; }
+  #card input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: #fff; border: 3px solid var(--line); border-radius: 999px; padding: 6px 14px; }
+  #card input:focus-visible { border-color: var(--leaf); outline: none; }
+  #card .row { display: flex; gap: 8px; margin-top: 10px; }
+  #card .note { color: var(--muted); font-size: 12px; margin-top: 8px; font-weight: 700; }
+  #card .x { position: absolute; right: 10px; top: 10px; }
+
+  /* ---- Conversazione nella scheda ---- */
+  .chat { display: flex; flex-direction: column; gap: 6px; max-height: 210px; overflow: auto; margin: 0 0 10px; padding: 2px 2px 2px 0; scroll-behavior: smooth; }
+  .chat:empty::before { content: 'Ancora nessun messaggio: scrivi qualcosa a Claude!'; color: var(--muted); font-size: 12.5px; padding: 6px 4px; }
+  .msg { max-width: 92%; padding: 7px 12px; border-radius: 18px; border: 3px solid #fff; box-shadow: 0 2px 0 rgba(120,85,40,.16); font-weight: 700; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; background: var(--leaf); color: #fff; border-bottom-right-radius: 6px; }
+  .msg.assistant { align-self: flex-start; background: #fff; border-color: var(--line); border-bottom-left-radius: 6px; font-weight: 600; }
+  .msg small { display: block; font-size: 11px; opacity: .85; margin-top: 3px; font-weight: 800; }
+  .msg.assistant small { color: var(--muted); }
+  .msg .via { opacity: .8; font-size: 11px; font-weight: 800; }
+  .msg.err { background: #ffd9d9; border-color: #ffb3b3; }
+  .dots::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+
+  /* ---- Richieste di permesso ---- */
+  #perm { position: absolute; z-index: 9; left: 50%; bottom: 62px; transform: translateX(-50%); width: min(520px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 10px; }
+  .ask { background: var(--cream); border: 4px solid #fff; border-radius: 26px; padding: 12px 16px 12px; box-shadow: 0 8px 0 rgba(120,85,40,.28), 0 0 0 4px rgba(255,210,122,.65); animation: pop .22s cubic-bezier(.3,1.6,.5,1); position: relative; overflow: hidden; }
+  .ask h3 { margin: 0 0 4px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+  .ask h3 .bell { display: inline-block; animation: ring 1s ease-in-out infinite; transform-origin: 50% 0; }
+  @keyframes ring { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(18deg); } 40% { transform: rotate(-16deg); } 60% { transform: rotate(10deg); } 80% { transform: rotate(-6deg); } }
+  .ask code { display: block; background: #fff; border: 2px solid var(--line); border-radius: 14px; padding: 7px 11px; font: 600 12.5px/1.4 ui-monospace, Consolas, monospace; margin: 6px 0 4px; max-height: 96px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ask .why { color: var(--muted); font-size: 12px; margin: 2px 0 8px; }
+  .ask .row { display: flex; gap: 8px; }
+  .ask .btn.ok { background: var(--leaf); color: #fff; box-shadow: 0 3px 0 var(--leaf-d); }
+  .ask .bar { position: absolute; left: 0; bottom: 0; height: 6px; background: var(--sun); transform-origin: left; }
+  .ask .bar { width: 100%; }
+  @keyframes shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  .ask.done { opacity: .75; }
+  .ask .res { font-weight: 900; }
+
+  #tip { position: absolute; z-index: 7; pointer-events: none; background: var(--ink); color: #fff6e0; border-radius: 12px; padding: 4px 11px; font-size: 12.5px; opacity: 0; transform: translate(-50%, -130%); transition: opacity .12s; white-space: nowrap; }
+  #tip.on { opacity: .95; }
+  #toast { position: absolute; z-index: 8; left: 50%; bottom: 66px; transform: translate(-50%, 10px); background: var(--cream); border: 3px solid #fff; box-shadow: var(--shadow); border-radius: 999px; padding: 8px 20px; opacity: 0; transition: .2s; pointer-events: none; }
+  #toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+  footer { position: absolute; z-index: 4; left: 14px; right: 14px; bottom: 12px; display: flex; gap: 12px; align-items: center; pointer-events: none; }
+  footer .pill { background: rgba(255,246,224,.92); border: 3px solid #fff; border-radius: 999px; padding: 4px 14px; font-size: 12.5px; box-shadow: var(--shadow); }
+  #conn::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--berry); margin-right: 7px; }
+  #conn.ok::before { background: var(--leaf); }
+
+  /* ---- Etichette sopra gli agenti ---- */
+  .tag { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; transform: translate(-50%, -100%); will-change: transform; }
+  .tag .name { background: var(--leaf); color: #fff; border: 3px solid #fff; border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(0,0,0,.2); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  .tag.main .name { background: var(--berry); }
+  .tag.sub .name { background: #5fb8ff; font-size: 11px; padding: 0 8px; }
+  .tag.sel .name { transform: scale(1.12); box-shadow: 0 0 0 4px rgba(255,255,255,.7), 0 3px 0 rgba(0,0,0,.2); }
+  .tag .chip { background: #fff; border: 3px solid var(--line); border-radius: 16px; padding: 1px 9px; font-size: 13px; box-shadow: 0 2px 0 rgba(0,0,0,.14); display: flex; gap: 5px; align-items: center; max-width: 170px; }
+  .tag .chip b { font-weight: 800; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
+  .tag .chip[hidden] { display: none; }
+  .tag .speech { position: relative; background: #fff; border: 3px solid var(--leaf); border-radius: 18px; padding: 5px 12px; max-width: 230px; font-size: 12.5px; line-height: 1.3; font-weight: 700; color: var(--ink); box-shadow: 0 3px 0 rgba(0,0,0,.18); animation: pop .2s cubic-bezier(.3,1.6,.5,1); margin-bottom: 4px; overflow-wrap: anywhere; }
+  .tag .speech::after { content: ''; position: absolute; left: 50%; bottom: -9px; width: 12px; height: 12px; background: #fff; border-right: 3px solid var(--leaf); border-bottom: 3px solid var(--leaf); transform: translateX(-50%) rotate(45deg); }
+  .tag .speech[hidden] { display: none; }
+  .tag .speech.small { border-color: var(--sun); font-size: 12px; }
+  .tag .chip .e { display: inline-block; animation: bob 1.1s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(-3px); } }
+
+  #nogl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; }
+  #nogl[hidden] { display: none; }
+  #nogl div { background: var(--cream); border: 4px solid #fff; border-radius: 26px; padding: 24px 30px; box-shadow: var(--shadow); max-width: 440px; }
+  #nogl a { color: var(--leaf-d); }
+
+  @media (max-width: 720px) { .brand span { display: none; } .btn .lbl { display: none; } #card { bottom: 56px; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" aria-label="Spazio di lavoro 3D degli agenti" role="img"></canvas>
+  <div id="labels"></div>
+
+  <header>
+    <div class="brand"><img src="/favicon.svg" alt="" width="34" height="34"><span>Vibeship</span></div>
+    <div class="dock" id="scenes" role="group" aria-label="Scenario"></div>
+    <div class="dock">
+      <button class="btn" id="agent-btn" aria-expanded="false" aria-controls="spawn"><span class="ic">🐾</span><span class="lbl">Agente</span></button>
+      <button class="btn primary" id="add-btn" aria-expanded="false" aria-controls="catalog"><span class="ic">🛠️</span><span class="lbl">Aggiungi</span></button>
+      <button class="btn sq" id="rot" data-tip="Ruota (R)" aria-label="Ruota" disabled><span class="ic">↻</span></button>
+      <button class="btn sq danger" id="del" data-tip="Rimuovi (Canc)" aria-label="Rimuovi" disabled><span class="ic">🗑️</span></button>
+      <button class="btn sq" id="reset" data-tip="Ripristina scenario" aria-label="Ripristina scenario"><span class="ic">↺</span></button>
+    </div>
+    <div class="spacer"></div>
+    <div class="dock">
+      <button class="btn sq" id="tod" data-tip="Luci della nave" aria-label="Luci della nave"><span class="ic">🛰️</span></button>
+      <button class="btn sq" id="snd" data-tip="Suoni" aria-label="Suoni" aria-pressed="false"><span class="ic">🔇</span></button>
+    </div>
+  </header>
+
+  <section id="catalog" hidden aria-label="Catalogo arredamento">
+    <h2><span>🛍️ Catalogo</span><button class="btn sq" id="cat-close" aria-label="Chiudi"><span class="ic">✕</span></button></h2>
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section id="spawn" hidden aria-label="Nuovo agente">
+    <h2><span>🐾 Nuovo agente</span><button class="btn sq" id="sp-close" aria-label="Chiudi"><span class="ic">✕</span></button></h2>
+    <p class="hint">Apre un nuovo terminale con Claude Code in questa cartella. Quando parte, l'abitante entra nella stanza.</p>
+    <label class="fld">Nome (facoltativo)<input id="sp-name" maxlength="40" placeholder="es. backend" autocomplete="off"></label>
+    <form id="sp-form" class="fld">Cartella di lavoro
+      <span class="inline"><input id="sp-path" placeholder="C:\percorso\del\progetto" autocomplete="off" aria-label="Percorso della cartella"><button class="btn" type="submit">Vai</button></span>
+    </form>
+    <div class="fld" id="sp-loc">Luogo
+      <div class="locs" id="sp-locs" role="radiogroup" aria-label="Luogo dell'agente"></div>
+    </div>
+    <div class="fld" id="sp-look">Personaggio
+      <div class="species" id="sp-species" role="radiogroup" aria-label="Personaggio"></div>
+      <div class="shirts" id="sp-shirts" role="radiogroup" aria-label="Divisa dell'equipaggio"></div>
+    </div>
+    <div class="recent" id="sp-recent" aria-label="Cartelle recenti"></div>
+    <div class="dirs" id="sp-dirs" role="list"></div>
+    <div class="newproj">
+      <button type="button" class="btn" id="np-toggle" aria-expanded="false"><span class="ic">📁</span> Nuovo progetto in questa cartella</button>
+      <form id="np-form" hidden autocomplete="off">
+        <input id="np-name" maxlength="64" placeholder="Nome del nuovo progetto" aria-label="Nome del nuovo progetto">
+        <label class="chk"><input type="checkbox" id="np-git" checked> Inizializza git</label>
+        <button class="btn primary" type="submit">Crea</button>
+      </form>
+    </div>
+    <button class="btn primary go" id="sp-go">🚀 Avvia agente</button>
+  </section>
+
+  <div id="card" hidden role="dialog" aria-label="Scheda agente">
+    <button class="btn sq x" id="card-close" aria-label="Chiudi"><span class="ic">✕</span></button>
+    <h2 id="card-name"></h2>
+    <div class="sp" id="card-sp"></div>
+    <div class="st"><span class="big" id="card-ic"></span><span id="card-st"></span></div>
+    <div class="chat" id="chat" aria-live="polite" aria-label="Conversazione"></div>
+    <form id="card-form" autocomplete="off">
+      <input id="card-text" placeholder="Scrivi a Claude…" maxlength="2000" aria-label="Messaggio per Claude">
+      <button class="btn primary" type="submit">Invia</button>
+    </form>
+    <div class="movebar" id="card-move" role="group" aria-label="Sposta in un altro luogo"></div>
+    <div class="row"><button class="btn danger" id="card-stop" type="button">✋ Ferma il lavoro</button><button class="btn danger" id="card-end" type="button">🚪 Chiudi agente</button></div>
+    <div class="note" id="card-note"></div>
+  </div>
+
+  <div id="perm" aria-live="assertive"></div>
+  <div id="tip" role="tooltip"></div>
+  <div id="toast" role="status"></div>
+
+  <footer>
+    <span class="pill" id="conn">in attesa del server…</span>
+    <span class="pill" id="count"></span>
+    <span class="pill">Trascina per spostare · tasto destro: ruota vista · rotella: zoom · R ruota · Canc rimuove</span>
+  </footer>
+
+  <div id="nogl" hidden><div><h2>WebGL non disponibile</h2><p>Il tuo browser non riesce ad avviare la grafica 3D.</p><p><a href="/legacy.html">Apri la versione 2D</a></p></div></div>
+</div>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>

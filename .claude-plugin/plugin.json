@@ -1,0 +1,6 @@
+{
+  "name": "vibeship",
+  "version": "0.1.0",
+  "description": "Vibeship: una navicella 3D in cui i tuoi agenti Claude Code lavorano in divisa da equipaggio. Scegli il ponte, arreda le postazioni, scrivi agli agenti e approva i permessi. Comando: /vibeship",
+  "author": { "name": "wag-me" }
+}

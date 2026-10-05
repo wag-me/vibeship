@@ -1,0 +1,4 @@
+{
+  "description": "Vibeship hooks module",
+  "modules": ["./register.js"]
+}

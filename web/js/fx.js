@@ -1,4 +1,4 @@
-// Particelle a sprite con pool: stelline, Zzz, nuvolette, punto esclamativo.
+// Pooled sprite particles: little stars, Zzz, puffs, exclamation mark.
 import { THREE } from './lib.js'
 
 function makeTex(draw) {

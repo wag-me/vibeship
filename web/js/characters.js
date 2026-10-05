@@ -1,26 +1,26 @@
-// Abitanti 3D procedurali (volpe, gatto, cane, procione, coniglio, orso, uccellino) in divisa da equipaggio spaziale.
-// Il personaggio guarda verso +z. root.position è sul pavimento.
+// Procedural 3D residents (fox, cat, dog, raccoon, rabbit, bear, bird) in space crew uniforms.
+// The character faces +z. root.position is on the floor.
 import { THREE, mat, sph, cone, capsule, cyl, box, torus, blob, bake, glow, holo } from './lib.js'
 
 export const SPECIES = {
-  fox:     { label: 'Volpe',     fur: '#f08a3c', belly: '#fff1dc', dark: '#5a3a2a', ears: 'point', snout: 'long',  tail: 'bushy', tailTip: '#fff1dc' },
-  cat:     { label: 'Gatto',     fur: '#f2a65a', belly: '#fff1dc', dark: '#8a5a32', ears: 'point', snout: 'short', tail: 'thin' },
-  dog:     { label: 'Cane',      fur: '#d3a77b', belly: '#fff4e6', dark: '#7a5236', ears: 'floppy', snout: 'round', tail: 'short' },
-  raccoon: { label: 'Procione',  fur: '#a5a7b5', belly: '#eceef3', dark: '#454859', ears: 'round', snout: 'round', tail: 'ring',  mask: true },
-  rabbit:  { label: 'Coniglio',  fur: '#f4ece6', belly: '#ffffff', dark: '#d9a5a5', ears: 'long',  snout: 'short', tail: 'pom' },
-  bear:    { label: 'Orso',      fur: '#b07a52', belly: '#e6c7a0', dark: '#6a4630', ears: 'round', snout: 'round', tail: 'pom' },
-  bird:    { label: 'Uccellino', fur: '#6db6e8', belly: '#f4fbff', dark: '#2f6a9a', ears: 'tuft',  snout: 'beak',  tail: 'feather' },
+  fox:     { label: 'Fox',     fur: '#f08a3c', belly: '#fff1dc', dark: '#5a3a2a', ears: 'point', snout: 'long',  tail: 'bushy', tailTip: '#fff1dc' },
+  cat:     { label: 'Cat',     fur: '#f2a65a', belly: '#fff1dc', dark: '#8a5a32', ears: 'point', snout: 'short', tail: 'thin' },
+  dog:     { label: 'Dog',      fur: '#d3a77b', belly: '#fff4e6', dark: '#7a5236', ears: 'floppy', snout: 'round', tail: 'short' },
+  raccoon: { label: 'Raccoon',  fur: '#a5a7b5', belly: '#eceef3', dark: '#454859', ears: 'round', snout: 'round', tail: 'ring',  mask: true },
+  rabbit:  { label: 'Rabbit',  fur: '#f4ece6', belly: '#ffffff', dark: '#d9a5a5', ears: 'long',  snout: 'short', tail: 'pom' },
+  bear:    { label: 'Bear',      fur: '#b07a52', belly: '#e6c7a0', dark: '#6a4630', ears: 'round', snout: 'round', tail: 'pom' },
+  bird:    { label: 'Bird', fur: '#6db6e8', belly: '#f4fbff', dark: '#2f6a9a', ears: 'tuft',  snout: 'beak',  tail: 'feather' },
 }
 export const SPECIES_IDS = Object.keys(SPECIES)
-// Divise dell'equipaggio: tuta, pantaloni, colore dei dettagli e accessorio sulla testa
+// Crew uniforms: suit, pants, accent color and head accessory
 export const OUTFITS = [
-  { id: 'captain',   name: 'Capitano',    suit: '#d94a4a', pants: '#2b2f4a', accent: '#f2c14e', head: 'cap',     pack: false },
-  { id: 'engineer',  name: 'Ingegnere',   suit: '#f08a2e', pants: '#5a5f6a', accent: '#ffd24a', head: 'goggles', belt: true },
-  { id: 'pilot',     name: 'Pilota',      suit: '#3f7ad9', pants: '#2a3d6a', accent: '#e8f1ff', head: 'helmet',  pack: true },
-  { id: 'scientist', name: 'Scienziato',  suit: '#f4f7fb', pants: '#7e8aa0', accent: '#6fd0c5', head: 'antenna', coat: true },
-  { id: 'medic',     name: 'Medico',      suit: '#46c6b4', pants: '#2d6e66', accent: '#ffffff', head: 'mirror',  cross: true },
-  { id: 'explorer',  name: 'Esploratore', suit: '#6aa84f', pants: '#4a5a3a', accent: '#c9e265', head: 'visor',   pack: true, belt: true },
-  { id: 'cadet',     name: 'Cadetto',     suit: '#8e6bd6', pants: '#3a2f66', accent: '#ff9fb2', head: 'beanie',  jet: true },
+  { id: 'captain',   name: 'Captain',    suit: '#d94a4a', pants: '#2b2f4a', accent: '#f2c14e', head: 'cap',     pack: false },
+  { id: 'engineer',  name: 'Engineer',   suit: '#f08a2e', pants: '#5a5f6a', accent: '#ffd24a', head: 'goggles', belt: true },
+  { id: 'pilot',     name: 'Pilot',      suit: '#3f7ad9', pants: '#2a3d6a', accent: '#e8f1ff', head: 'helmet',  pack: true },
+  { id: 'scientist', name: 'Scientist',  suit: '#f4f7fb', pants: '#7e8aa0', accent: '#6fd0c5', head: 'antenna', coat: true },
+  { id: 'medic',     name: 'Medic',      suit: '#46c6b4', pants: '#2d6e66', accent: '#ffffff', head: 'mirror',  cross: true },
+  { id: 'explorer',  name: 'Explorer', suit: '#6aa84f', pants: '#4a5a3a', accent: '#c9e265', head: 'visor',   pack: true, belt: true },
+  { id: 'cadet',     name: 'Cadet',     suit: '#8e6bd6', pants: '#3a2f66', accent: '#ff9fb2', head: 'beanie',  jet: true },
 ]
 export const SHIRTS = OUTFITS.map((o) => o.suit)
 
@@ -38,7 +38,7 @@ export function createCharacter(speciesId, shirtIndex = 0) {
   const shadow = blob(1.0, 1.0)
   root.add(shadow)
 
-  // Bacino: pivot per bob / seduta
+  // Pelvis: pivot for bob / sitting
   const body = new THREE.Group()
   body.position.y = 0.5
   rig.add(body)
@@ -47,9 +47,9 @@ export function createCharacter(speciesId, shirtIndex = 0) {
   torso.position.y = 0.28
   body.add(torso)
   sph(torso, 0.34, shirt, 0, 0, 0, 1, 1.08, 0.88)
-  // dettagli della tuta
-  torus(torso, 0.2, 0.05, outfit.accent, 0, 0.3, 0.03).rotation.x = Math.PI / 2 // anello del collo
-  box(torso, 0.16, 0.11, 0.03, outfit.accent, 0, 0.06, 0.3, 0.012) // pannello sul petto
+  // suit details
+  torus(torso, 0.2, 0.05, outfit.accent, 0, 0.3, 0.03).rotation.x = Math.PI / 2 // neck ring
+  box(torso, 0.16, 0.11, 0.03, outfit.accent, 0, 0.06, 0.3, 0.012) // chest panel
   box(torso, 0.05, 0.05, 0.035, '#2a3150', -0.03, 0.06, 0.31, 0.01)
   if (outfit.cross) { box(torso, 0.2, 0.06, 0.035, '#ff5a6a', 0, 0.06, 0.33, 0.012); box(torso, 0.06, 0.2, 0.035, '#ff5a6a', 0, 0.06, 0.33, 0.012) }
   if (outfit.belt) cyl(torso, 0.3, 0.3, 0.07, outfit.accent, 0, -0.21, 0, 18)
@@ -88,7 +88,7 @@ export function createCharacter(speciesId, shirtIndex = 0) {
   if (sp.ears === 'long') ear((g, sx) => { const e = capsule(g, 0.07, 0.38, sp.fur, 0, 0.3, 0); e.rotation.z = -sx * 0.12; const i = capsule(g, 0.035, 0.3, '#f7b6bb', 0, 0.3, 0.05); i.rotation.z = -sx * 0.12 })
   if (sp.ears === 'tuft') { const t = cone(head, 0.07, 0.2, sp.dark, 0, 0.4, 0.02, 6); t.rotation.x = -0.3 }
 
-  // accessorio sulla testa, in base alla divisa
+  // head accessory, depending on the uniform
   if (outfit.head === 'cap') {
     cyl(head, 0.3, 0.33, 0.13, shirt, 0, 0.32, 0, 18)
     box(head, 0.36, 0.03, 0.2, shirt, 0, 0.27, 0.3, 0.012)
@@ -100,7 +100,7 @@ export function createCharacter(speciesId, shirtIndex = 0) {
       cyl(head, 0.075, 0.075, 0.07, '#ffd24a', sx * 0.15, 0.22, 0.34, 16).rotation.x = Math.PI / 2
     }
   } else if (outfit.head === 'helmet') {
-    torus(head, 0.3, 0.045, '#d8dff0', 0, -0.3, 0).rotation.x = Math.PI / 2 // collare del casco
+    torus(head, 0.3, 0.045, '#d8dff0', 0, -0.3, 0).rotation.x = Math.PI / 2 // helmet collar
     const bubble = new THREE.Mesh(new THREE.SphereGeometry(0.52, 20, 14), holo(0xbfe9ff, 0.2, 0.15))
     bubble.scale.set(1.0, 0.95, 1.0); bubble.position.y = -0.02
     head.add(bubble)
@@ -122,13 +122,13 @@ export function createCharacter(speciesId, shirtIndex = 0) {
     sph(head, 0.075, '#ffffff', 0, 0.45, 0)
   }
 
-  // Braccia (pivot alla spalla)
+  // Arms (pivot at the shoulder)
   const arms = []
   for (const sx of [-1, 1]) {
     const a = new THREE.Group()
     a.position.set(sx * 0.35, 0.4, 0)
     capsule(a, 0.085, 0.2, shirt, 0, -0.17, 0)
-    sph(a, 0.1, '#e8edf8', 0, -0.38, 0.01) // guanto della tuta
+    sph(a, 0.1, '#e8edf8', 0, -0.38, 0.01) // suit glove
     torus(a, 0.085, 0.025, outfit.accent, 0, -0.3, 0).rotation.x = Math.PI / 2
     body.add(a)
     arms.push(a)
@@ -155,7 +155,7 @@ export function createCharacter(speciesId, shirtIndex = 0) {
   if (sp.tail === 'pom') { sph(tail, 0.12, sp.belly, 0, 0.06, -0.1) }
   if (sp.tail === 'feather') { cone(tail, 0.07, 0.34, sp.dark, 0, 0.1, -0.18, 6).rotation.x = -1.9 }
 
-  // una mesh per parte del corpo (testa, busto, braccia, gambe, coda): molte meno draw call
+  // one mesh per body part (head, torso, arms, legs, tail): far fewer draw calls
   rig.updateMatrixWorld(true)
   for (const part of [torso, head, tail, ...arms, ...legs]) bake(part)
 
@@ -177,7 +177,7 @@ export function createCharacter(speciesId, shirtIndex = 0) {
     // corpo
     const bob = moving ? Math.abs(Math.sin(state.walkPhase)) * 0.07 : 0
     body.position.y = 0.5 + bob
-    root.position.y = (0.56 - 0.5 * S) * sitAmt // seduto: appoggiato sulla seduta
+    root.position.y = (0.56 - 0.5 * S) * sitAmt // sitting: resting on the seat
     const breathe = 1 + Math.sin(t * 2.2) * 0.018
     torso.scale.set(1, breathe, 1)
     body.rotation.x = a.mode === 'sleep' ? 0.12 * sitAmt : 0

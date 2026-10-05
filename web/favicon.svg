@@ -21,7 +21,7 @@
       <path d="M256 50 C322 98 350 190 340 318 Q338 336 320 336 L192 336 Q174 336 172 318 C162 190 190 98 256 50 Z"/>
     </clipPath>
   </defs>
-  <!-- versione semplificata e più grande del razzo, leggibile anche a 16 px -->
+  <!-- simplified, larger version of the rocket, readable even at 16 px -->
   <g clip-path="url(#tile)">
     <rect width="512" height="512" fill="url(#bg)"/>
     <g fill="#ffffff"><circle cx="86" cy="96" r="8"/><circle cx="440" cy="76" r="7" fill="#9fe8ff"/><circle cx="76" cy="400" r="6"/><circle cx="450" cy="420" r="8"/></g>

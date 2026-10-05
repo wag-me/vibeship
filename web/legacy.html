@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -58,104 +58,104 @@
 <body>
 <header>
   <h1>Vibeship</h1>
-  <div class="group" id="scenes" role="group" aria-label="Scenario"><span>Scenario</span></div>
-  <div class="group" id="palette" role="group" aria-label="Aggiungi"><span>Aggiungi</span></div>
-  <div class="group"><button id="del" class="danger" disabled>Rimuovi selezionato</button><button id="reset">Ripristina scenario</button></div>
+  <div class="group" id="scenes" role="group" aria-label="Scene"><span>Scene</span></div>
+  <div class="group" id="palette" role="group" aria-label="Add"><span>Add</span></div>
+  <div class="group"><button id="del" class="danger" disabled>Remove selected</button><button id="reset">Reset scene</button></div>
 </header>
 <main>
-  <svg id="scene" viewBox="0 0 960 560" role="img" aria-label="Spazio di lavoro degli agenti">
+  <svg id="scene" viewBox="0 0 960 560" role="img" aria-label="Agents workspace">
     <g id="bg"></g>
     <g id="stations"></g>
     <g id="agents"></g>
   </svg>
 </main>
-<div id="card" role="dialog" aria-label="Agente" hidden>
-  <button class="close" id="card-close" aria-label="Chiudi">×</button>
+<div id="card" role="dialog" aria-label="Agent" hidden>
+  <button class="close" id="card-close" aria-label="Close">×</button>
   <h2 id="card-name"></h2>
   <div class="st" id="card-status"></div>
   <form id="card-form" autocomplete="off">
-    <input id="card-text" placeholder="Scrivi a Claude…" maxlength="2000" aria-label="Messaggio per Claude">
-    <button type="submit" aria-pressed="true">Invia</button>
+    <input id="card-text" placeholder="Write to Claude…" maxlength="2000" aria-label="Message for Claude">
+    <button type="submit" aria-pressed="true">Send</button>
   </form>
-  <div class="row"><button id="card-stop" class="danger">Ferma il lavoro</button></div>
+  <div class="row"><button id="card-stop" class="danger">Stop work</button></div>
   <div class="note" id="card-note"></div>
 </div>
 <div id="toast" role="status"></div>
 <footer>
-  <span id="conn">in attesa del server…</span>
+  <span id="conn">waiting for the server…</span>
   <span id="count"></span>
-  <span>Trascina le postazioni per spostarle · Canc per rimuovere la selezionata</span>
+  <span>Drag the stations to move them · Del removes the selected one</span>
 </footer>
 
 <script>
 const NS = 'http://www.w3.org/2000/svg'
 const W = 960, H = 560, WALL = 110, GRID = 10
 
-// ---------- Stati degli agenti ----------
+// ---------- Agent states ----------
 const STATUS = {
-  idle: { icon: '💤', color: '#9aa0a6', text: 'a riposo' },
-  read: { icon: '📖', color: '#2fa3c7', text: 'legge' },
-  write: { icon: '⌨️', color: '#3aa76d', text: 'scrive' },
-  run: { icon: '💻', color: '#d99a1e', text: 'esegue' },
-  web: { icon: '🌐', color: '#a45bd0', text: 'cerca sul web' },
-  delegate: { icon: '📨', color: '#3a6ea5', text: 'delega' },
+  idle: { icon: '💤', color: '#9aa0a6', text: 'idle' },
+  read: { icon: '📖', color: '#2fa3c7', text: 'reading' },
+  write: { icon: '⌨️', color: '#3aa76d', text: 'writing' },
+  run: { icon: '💻', color: '#d99a1e', text: 'running' },
+  web: { icon: '🌐', color: '#a45bd0', text: 'searching the web' },
+  delegate: { icon: '📨', color: '#3a6ea5', text: 'delegating' },
 }
 
-// ---------- Tipi di postazione per scenario ----------
-// work = un agente può sedersi qui. svg() disegna attorno a (0,0) in una cornice di circa 110x70.
+// ---------- Station types per scene ----------
+// work = an agent can sit here. svg() draws around (0,0) in a frame of about 110x70.
 const box = (x, y, w, h, fill, extra = '') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${fill}" ${extra}/>`
 const T = {
   office: {
-    desk: { label: 'Scrivania', work: true, w: 110, h: 70, svg: () =>
+    desk: { label: 'Desk', work: true, w: 110, h: 70, svg: () =>
       box(-52, -22, 104, 44, '#a9743f', 'stroke="#7d5229" stroke-width="2"') +
       box(-18, -34, 36, 22, '#1d2430', 'stroke="#555" stroke-width="2"') + box(-14, -31, 28, 15, '#5fb4e8') + box(-4, -12, 8, 6, '#555') +
       box(-26, 2, 52, 10, '#d9d4c8') },
-    board: { label: 'Lavagna', work: false, w: 120, h: 50, svg: () =>
+    board: { label: 'Whiteboard', work: false, w: 120, h: 50, svg: () =>
       box(-56, -22, 112, 44, '#f6f6f2', 'stroke="#777" stroke-width="3"') +
       '<path d="M-44 -8 L-20 -14 L0 -2 L24 -16 L44 -6" stroke="#d6453d" stroke-width="3" fill="none"/>' +
       '<path d="M-44 10 H30" stroke="#3a6ea5" stroke-width="3"/>' },
-    plant: { label: 'Pianta', work: false, w: 50, h: 70, svg: () =>
+    plant: { label: 'Plant', work: false, w: 50, h: 70, svg: () =>
       box(-14, 8, 28, 22, '#b5651d') + '<ellipse cx="0" cy="-6" rx="24" ry="22" fill="#3f9b57"/><ellipse cx="-10" cy="-16" rx="12" ry="14" fill="#52b36b"/>' },
-    sofa: { label: 'Divano', work: false, w: 130, h: 56, svg: () =>
+    sofa: { label: 'Sofa', work: false, w: 130, h: 56, svg: () =>
       box(-60, -22, 120, 24, '#7a5ca8') + box(-64, -6, 128, 28, '#8f70c0') + box(-64, -10, 14, 32, '#6b4f96') + box(50, -10, 14, 32, '#6b4f96') },
-    cooler: { label: 'Distributore', work: false, w: 40, h: 70, svg: () =>
+    cooler: { label: 'Water cooler', work: false, w: 40, h: 70, svg: () =>
       box(-14, -10, 28, 40, '#e6eaee', 'stroke="#98a" stroke-width="2"') + '<rect x="-10" y="-34" width="20" height="26" rx="8" fill="#8fd0f0" opacity=".8"/>' },
   },
   garage: {
-    bench: { label: 'Banco da lavoro', work: true, w: 120, h: 70, svg: () =>
+    bench: { label: 'Workbench', work: true, w: 120, h: 70, svg: () =>
       box(-56, -20, 112, 40, '#6d4b2f', 'stroke="#432" stroke-width="2"') + box(-52, 20, 8, 12, '#444') + box(44, 20, 8, 12, '#444') +
       box(-36, -32, 20, 12, '#b33', 'stroke="#611" stroke-width="2"') + box(8, -28, 34, 8, '#888') + '<circle cx="30" cy="-30" r="6" fill="#bbb"/>' },
-    lift: { label: 'Ponte sollevatore', work: true, w: 130, h: 80, svg: () =>
+    lift: { label: 'Car lift', work: true, w: 130, h: 80, svg: () =>
       box(-56, 8, 112, 10, '#d9b21e', 'stroke="#876" stroke-width="2"') +
       '<path d="M-52 4 L-40 -22 L24 -22 L46 4 Z" fill="#c43a3a" stroke="#722" stroke-width="2"/>' +
       '<circle cx="-30" cy="6" r="11" fill="#222"/><circle cx="30" cy="6" r="11" fill="#222"/>' +
       box(-34, -18, 24, 12, '#bde3f5') },
-    toolcart: { label: 'Carrello attrezzi', work: false, w: 70, h: 60, svg: () =>
+    toolcart: { label: 'Tool cart', work: false, w: 70, h: 60, svg: () =>
       box(-28, -22, 56, 40, '#c73b3b', 'stroke="#722" stroke-width="2"') + box(-24, -14, 48, 6, '#8e2626') + box(-24, -2, 48, 6, '#8e2626') +
       '<circle cx="-20" cy="24" r="6" fill="#222"/><circle cx="20" cy="24" r="6" fill="#222"/>' },
-    tires: { label: 'Gomme', work: false, w: 60, h: 60, svg: () =>
+    tires: { label: 'Tires', work: false, w: 60, h: 60, svg: () =>
       '<ellipse cx="0" cy="12" rx="26" ry="12" fill="#222"/><ellipse cx="0" cy="0" rx="26" ry="12" fill="#2d2d2d"/><ellipse cx="0" cy="-12" rx="26" ry="12" fill="#222"/><ellipse cx="0" cy="-12" rx="10" ry="4" fill="#666"/>' },
-    barrel: { label: 'Fusto', work: false, w: 40, h: 54, svg: () =>
+    barrel: { label: 'Barrel', work: false, w: 40, h: 54, svg: () =>
       box(-16, -24, 32, 48, '#2f6fa8', 'stroke="#123" stroke-width="2"') + box(-16, -10, 32, 4, '#1c4a73') + box(-16, 6, 32, 4, '#1c4a73') },
   },
   lab: {
     console: { label: 'Console', work: true, w: 120, h: 70, svg: () =>
       box(-56, -6, 112, 28, '#3b4a5a', 'stroke="#1c2630" stroke-width="2"') + box(-48, -32, 40, 28, '#101820', 'stroke="#789" stroke-width="2"') +
       box(-44, -28, 32, 20, '#37d6a0') + box(6, -28, 40, 22, '#101820', 'stroke="#789" stroke-width="2"') + '<path d="M10 -12 L20 -20 L28 -14 L40 -24" stroke="#f5b942" stroke-width="2" fill="none"/>' },
-    rack: { label: 'Rack server', work: true, w: 70, h: 90, svg: () =>
+    rack: { label: 'Server rack', work: true, w: 70, h: 90, svg: () =>
       box(-28, -40, 56, 80, '#2b323b', 'stroke="#111" stroke-width="2"') +
       [-32, -18, -4, 10, 24].map((y, i) => box(-24, y, 48, 10, '#46515e') + `<circle cx="-16" cy="${y + 5}" r="2.5" fill="${i % 2 ? '#3aa76d' : '#f5b942'}"/>`).join('') },
-    tube: { label: 'Provette', work: false, w: 60, h: 60, svg: () =>
+    tube: { label: 'Test tubes', work: false, w: 60, h: 60, svg: () =>
       box(-24, 8, 48, 10, '#9aa') + [-14, 0, 14].map((x, i) => `<rect x="${x - 5}" y="-22" width="10" height="34" rx="5" fill="${['#e8546f', '#4ab0e8', '#7ad06b'][i]}" opacity=".85"/>`).join('') },
-    scope: { label: 'Microscopio', work: true, w: 70, h: 70, svg: () =>
+    scope: { label: 'Microscope', work: true, w: 70, h: 70, svg: () =>
       box(-22, 18, 44, 8, '#556') + box(-4, -24, 8, 44, '#778') + '<path d="M-4 -24 L-22 -10" stroke="#556" stroke-width="8"/>' + '<circle cx="-24" cy="-8" r="6" fill="#222"/>' },
   },
 }
 
 const SCENE_META = {
-  office: { label: 'Ufficio' },
+  office: { label: 'Office' },
   garage: { label: 'Garage' },
-  lab: { label: 'Laboratorio' },
+  lab: { label: 'Laboratory' },
 }
 
 const DEFAULTS = {
@@ -303,7 +303,7 @@ function saveLayout() {
 function addStation(type) {
   const list = stationsOf(layout.scene)
   const def = T[layout.scene][type]
-  // Cerca un punto libero scorrendo la griglia
+  // Looks for a free spot by scanning the grid
   let pos = null
   for (let y = 240; y < H - 40 && !pos; y += 70) {
     for (let x = 130; x < W - 60; x += 100) {
@@ -344,7 +344,7 @@ function buildControls() {
   for (const [type, def] of Object.entries(T[layout.scene])) {
     const b = document.createElement('button')
     b.textContent = '+ ' + def.label
-    b.title = def.work ? 'Postazione di lavoro: un agente può sedersi qui' : 'Arredo'
+    b.title = def.work ? 'Work station: an agent can sit here' : 'Furniture'
     b.onclick = () => addStation(type)
     gp.appendChild(b)
   }
@@ -352,7 +352,7 @@ function buildControls() {
 
 document.getElementById('del').onclick = removeSelected
 document.getElementById('reset').onclick = () => {
-  if (!confirm('Ripristinare le postazioni di questo scenario?')) return
+  if (!confirm('Reset the stations of this scene?')) return
   delete layout.scenes[layout.scene]
   selected = null
   drawStations()
@@ -375,7 +375,7 @@ const PALETTE = ['#f2a65a', '#8ec9ef', '#8fd7a8', '#e5a0d8', '#f5d36a', '#9ad6d0
 const SPECIES = ['cat', 'bear', 'rabbit', 'frog', 'duck', 'mouse']
 const hashOf = (key) => { let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h }
 
-// Testa e dettagli per specie, centrati sulla testa
+// Head and details per species, centered on the head
 function headSvg(species, fur) {
   const ears = {
     cat: `<path d="M-16 -22 L-14 -38 L-3 -27 Z" fill="${fur}"/><path d="M16 -22 L14 -38 L3 -27 Z" fill="${fur}"/><path d="M-13 -26 L-12 -33 L-7 -28 Z" fill="#f7b6bb"/><path d="M13 -26 L12 -33 L7 -28 Z" fill="#f7b6bb"/>`,
@@ -420,7 +420,7 @@ function makeAgentNode(a) {
   g.setAttribute('class', 'villager')
   g.setAttribute('tabindex', '0')
   g.setAttribute('role', 'button')
-  g.setAttribute('aria-label', 'Apri la scheda di ' + a.name)
+  g.setAttribute('aria-label', 'Open the card of ' + a.name)
   g.addEventListener('click', () => openCard(a.key))
   g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openCard(a.key) } })
   gAg.appendChild(g)
@@ -431,7 +431,7 @@ function syncAgents() {
   const keys = new Set(agents.map((a) => a.key))
   for (const [k, n] of nodes) if (!keys.has(k)) { n.g.remove(); nodes.delete(k) }
   for (const a of agents) if (!nodes.has(a.key)) nodes.set(a.key, makeAgentNode(a))
-  document.getElementById('count').textContent = agents.length + (agents.length === 1 ? ' agente' : ' agenti')
+  document.getElementById('count').textContent = agents.length + (agents.length === 1 ? ' agent' : ' agents')
 }
 
 function targets() {
@@ -480,14 +480,14 @@ function frame(t) {
   requestAnimationFrame(frame)
 }
 
-// ---------- Scheda dell'agente (chat / stop) ----------
+// ---------- Agent card (chat / stop) ----------
 const qs = new URLSearchParams(location.search)
 let TOKEN = qs.get('t') || ''
 try {
   if (TOKEN) sessionStorage.setItem('ao-token', TOKEN)
   else TOKEN = sessionStorage.getItem('ao-token') || ''
 } catch {}
-if (qs.has('t')) history.replaceState(null, '', location.pathname) // toglie il token dall'indirizzo
+if (qs.has('t')) history.replaceState(null, '', location.pathname) // removes the token from the address bar
 
 const card = document.getElementById('card')
 let cardKey = null
@@ -511,8 +511,8 @@ function updateCard(focus) {
   document.getElementById('card-form').style.display = isMain ? '' : 'none'
   document.getElementById('card-stop').style.display = isMain ? '' : 'none'
   document.getElementById('card-note').textContent = isMain
-    ? (TOKEN ? 'Il messaggio arriva a Claude come se lo scrivessi tu nel terminale.' : 'Apri questa finestra con /vibeship per abilitare chat e stop.')
-    : 'I subagenti non ricevono messaggi: parla con Claude, che li coordina.'
+    ? (TOKEN ? 'The message reaches Claude as if you typed it in the terminal.' : 'Open this window with /vibeship to enable chat and stop.')
+    : 'Subagents do not receive messages: talk to Claude, who coordinates them.'
   const wasHidden = card.hidden
   card.hidden = false
   if (focus && isMain && wasHidden !== undefined) document.getElementById('card-text').focus()
@@ -520,16 +520,16 @@ function updateCard(focus) {
 async function sendCommand(kind, text) {
   const a = agents.find((x) => x.key === cardKey)
   if (!a) return
-  if (!TOKEN) { toast('Apri la finestra con /vibeship per inviare comandi'); return }
+  if (!TOKEN) { toast('Open the window with /vibeship to send commands'); return }
   try {
     const r = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: a.session, kind, text }) })
-    if (r.status === 401) toast('Token scaduto: riapri la finestra con /vibeship')
-    else if (!r.ok) toast('Comando non valido')
+    if (r.status === 401) toast('Token expired: reopen the window with /vibeship')
+    else if (!r.ok) toast('Invalid command')
     else {
-      toast(kind === 'say' ? 'Messaggio inviato ✉️' : 'Stop inviato ✋')
+      toast(kind === 'say' ? 'Message sent ✉️' : 'Stop sent ✋')
       const n = nodes.get(a.key); if (n) n.jump = performance.now()
     }
-  } catch { toast('Server non raggiungibile') }
+  } catch { toast('Server unreachable') }
 }
 document.getElementById('card-close').onclick = closeCard
 document.getElementById('card-stop').onclick = () => sendCommand('stop')
@@ -543,12 +543,12 @@ document.getElementById('card-form').onsubmit = (ev) => {
 }
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && cardKey) closeCard() })
 
-// ---------- Collegamento al server ----------
+// ---------- Server connection ----------
 const conn = document.getElementById('conn')
 function connect() {
   const es = new EventSource('/stream')
-  es.onopen = () => { conn.className = 'ok'; conn.textContent = 'collegato' }
-  es.onerror = () => { conn.className = ''; conn.textContent = 'server non raggiungibile, riprovo…' }
+  es.onopen = () => { conn.className = 'ok'; conn.textContent = 'connected' }
+  es.onerror = () => { conn.className = ''; conn.textContent = 'server unreachable, retrying…' }
   es.onmessage = (m) => {
     const data = JSON.parse(m.data)
     agents = data.agents

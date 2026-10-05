@@ -1,11 +1,11 @@
-// Ambiente: ponte di una navicella a diorama (scafo ottagonale, oblò, sovrastrutture), spazio e luci della nave.
+// Environment: a diorama-style spaceship deck (octagonal hull, portholes, superstructures), space and ship lights.
 import { THREE, mat, glow, glowMats, box, cyl, sph, rand, bakeShared } from './lib.js'
 
-// Area di gioco (dove si possono mettere gli oggetti)
+// Play area (where objects can be placed)
 export const ROOM = { w: 24, d: 14, wallH: 4.2 }
 export const BOUNDS = { minX: -ROOM.w / 2, maxX: ROOM.w / 2, minZ: -ROOM.d / 2, maxZ: ROOM.d / 2 }
 
-// Scafo: ottagono con angoli smussati, un po' più grande dell'area di gioco
+// Hull: octagon with rounded corners, a bit larger than the play area
 const HX = 13.2, HZ = 8.2, CH = 2.4
 const PLAN = [
   [-HX + CH, -HZ], [HX - CH, -HZ], [HX, -HZ + CH], [HX, HZ - CH],
@@ -25,11 +25,11 @@ function canvasTex(w, h, draw, repeat) {
   return t
 }
 const mix = (a, b, k) => '#' + new THREE.Color(a).lerp(new THREE.Color(b), k).getHexString()
-// Le UV della piattaforma sono in metri: 0.25 = una piastrella ogni 4 m
+// The platform UVs are in meters: 0.25 = one tile every 4 m
 const REP = [0.25, 0.25]
 
 const FLOORS = {
-  // Plancia: piastre blu notte con linee ciano
+  // Bridge: midnight-blue plates with cyan lines
   bridge: () => canvasTex(512, 512, (g, s) => {
     const r = rand(3)
     const n = 4, t = s / n
@@ -43,7 +43,7 @@ const FLOORS = {
       for (const [dx, dy] of [[10, 10], [t - 10, 10], [10, t - 10], [t - 10, t - 10]]) { g.beginPath(); g.arc(x * t + dx, y * t + dy, 3, 0, 7); g.fill() }
     }
   }, REP),
-  // Sala macchine: lamiera mandorlata grigia con segni arancioni
+  // Engine room: grey diamond-plate with orange markings
   engine: () => canvasTex(512, 512, (g, s) => {
     g.fillStyle = '#3a3f4b'; g.fillRect(0, 0, s, s)
     g.strokeStyle = 'rgba(160,172,196,0.35)'; g.lineWidth = 3
@@ -54,7 +54,7 @@ const FLOORS = {
     g.strokeStyle = '#2a2e38'; g.lineWidth = 6; g.strokeRect(3, 3, s - 6, s - 6)
     g.fillStyle = '#e0872e'; g.fillRect(0, 0, 40, 8); g.fillRect(0, 0, 8, 40)
   }, REP),
-  // Serra: piastrelle chiare con venature verdi
+  // Greenhouse: light tiles with green veining
   habitat: () => canvasTex(512, 512, (g, s) => {
     const r = rand(9)
     g.fillStyle = '#dce6e2'; g.fillRect(0, 0, s, s)
@@ -68,7 +68,7 @@ const FLOORS = {
     for (let i = 0; i < 10; i++) { g.beginPath(); g.ellipse(r() * s, r() * s, 10, 4, r() * 3, 0, 7); g.fill() }
   }, REP),
 }
-// Lamiera dello scafo: pannelli con righe e rivetti
+// Hull plating: panels with lines and rivets
 const hullTexture = () => canvasTex(256, 256, (g, s) => {
   g.fillStyle = '#9aa3bb'; g.fillRect(0, 0, s, s)
   g.strokeStyle = 'rgba(30,40,70,0.55)'; g.lineWidth = 3
@@ -92,7 +92,7 @@ const THEMES = {
   habitat: { wall: '#e3ede8', trim: '#4aa8a0', dado: '#bcd6cf', side: '#9fbfb8', hull: '#9fc2bb' },
 }
 
-// ---------- Modalità luci della nave ----------
+// ---------- Ship light modes ----------
 const C = (h) => new THREE.Color(h)
 const MODES = {
   normal: { hemiS: C('#c9dcff'), hemiG: C('#7d89b3'), hemiI: 1.3,  sun: C('#eaf2ff'), sunI: 2.2, sunPos: [9, 20, 11], exp: 1.08, night: 0.35, accent: C('#4de0ff') },
@@ -110,9 +110,12 @@ function spaceTexture() {
     const nebula = ['rgba(150,80,255,', 'rgba(60,200,230,', 'rgba(255,90,170,', 'rgba(80,120,255,']
     for (let i = 0; i < 12; i++) {
       const x = r() * w, y = h * (0.2 + r() * 0.6), rad = 160 + r() * 260
-      const gr = g.createRadialGradient(x, y, 0, x, y, rad)
-      gr.addColorStop(0, nebula[i % 4] + '0.22)'); gr.addColorStop(1, nebula[i % 4] + '0)')
-      g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2)
+      // drawn again one texture width to each side so it wraps around the seam (no hard edge)
+      for (const dx of [-w, 0, w]) {
+        const gr = g.createRadialGradient(x + dx, y, 0, x + dx, y, rad)
+        gr.addColorStop(0, nebula[i % 4] + '0.22)'); gr.addColorStop(1, nebula[i % 4] + '0)')
+        g.fillStyle = gr; g.fillRect(x + dx - rad, y - rad, rad * 2, rad * 2)
+      }
     }
   })
 }
@@ -127,7 +130,7 @@ function planetTexture(a, b, seed) {
   })
 }
 
-// Contorno dello scafo (ottagono) come Shape; sy = -z perché poi viene ruotato in piano
+// Hull outline (octagon) as a Shape; sy = -z because it is later rotated flat
 function hullShape(scale = 1) {
   const s = new THREE.Shape()
   PLAN.forEach(([x, z], i) => { const px = x * scale, py = -z * scale; if (i === 0) s.moveTo(px, py); else s.lineTo(px, py) })
@@ -156,7 +159,7 @@ export function createWorld(scene, renderer) {
   fill.position.set(-10, 8, 14)
   scene.add(fill)
 
-  // ----- Spazio: fondale che segue la camera (come se fosse lontanissimo) -----
+  // ----- Space: backdrop that follows the camera (as if infinitely far away) -----
   const sky = new THREE.Mesh(new THREE.SphereGeometry(180, 32, 16), new THREE.MeshBasicMaterial({ map: spaceTexture(), side: THREE.BackSide, fog: false }))
   scene.add(sky)
   const R = rand(5)
@@ -166,7 +169,7 @@ export function createWorld(scene, renderer) {
   scene.add(space)
   const starPos = [], starCol = []
   const tints = [new THREE.Color('#ffffff'), new THREE.Color('#cfe0ff'), new THREE.Color('#ffe9c0'), new THREE.Color('#ffd0e0')]
-  for (let i = 0; i < 2600; i++) {
+  for (let i = 0; i < 4200; i++) {
     const u = R() * 2 - 1, a = R() * Math.PI * 2, rr = Math.sqrt(1 - u * u)
     starPos.push(Math.cos(a) * rr * 170, u * 170, Math.sin(a) * rr * 170)
     const c = tints[Math.floor(R() * 4)].clone().multiplyScalar(0.45 + R() * 0.55)
@@ -213,7 +216,7 @@ export function createWorld(scene, renderer) {
   const frameMat = new THREE.MeshStandardMaterial({ color: '#aab6d6', roughness: 0.4, metalness: 0.45 })
   const glassMat = new THREE.MeshStandardMaterial({ color: '#9fd8ff', roughness: 0.1, transparent: true, opacity: 0.1, depthWrite: false })
 
-  // ----- Piattaforma: pavimento e bordo di scafo, entrambi ottagonali -----
+  // ----- Platform: floor and hull edge, both octagonal -----
   const FLOOR_D = 0.3
   const floorGeo = new THREE.ExtrudeGeometry(hullShape(1), { depth: FLOOR_D, bevelEnabled: false })
   floorGeo.rotateX(-Math.PI / 2)
@@ -230,7 +233,7 @@ export function createWorld(scene, renderer) {
   hull.position.y = -FLOOR_D - HULL_D - 0.14
   hull.castShadow = true; hull.receiveShadow = true
   root.add(hull)
-  // luci di via lungo il bordo e fari di segnalazione
+  // path lights along the edge and beacon lights
   const rim = new THREE.Group()
   for (let i = 0; i < PLAN.length; i++) {
     const [x1, z1] = PLAN[i], [x2, z2] = PLAN[(i + 1) % PLAN.length]
@@ -247,7 +250,7 @@ export function createWorld(scene, renderer) {
   navGreen.position.set(PLAN[2][0] * 1.04, -0.2, PLAN[2][1] * 1.04)
   root.add(navRed, navGreen)
 
-  // ----- Pareti a pannelli con oblò tondi -----
+  // ----- Paneled walls with round portholes -----
   const H = ROOM.wallH
   function panelGeo(L, holes) {
     const s = new THREE.Shape()
@@ -282,13 +285,13 @@ export function createWorld(scene, renderer) {
     for (let i = 0; i < 3; i++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.05, 0.05), frameMat); sp.position.set(cx, cy - 0.28, z + 0.2); sp.rotation.z = (i * Math.PI) / 3; g.add(sp) }
     for (let i = 0; i < 6; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.06), mat(i % 2 ? '#2a2e38' : '#f2c14e')); t.position.set(cx - r + 0.2 + i * 0.2 * (r / 0.7), cy - r + 0.22, z + 0.16); g.add(t) }
   }
-  // Un pannello di parete lungo l'asse tra due vertici dello scafo
+  // A wall panel along the axis between two hull vertices
   function wallPanel(i, holes, extra) {
     const [x1, z1] = PLAN[i], [x2, z2] = PLAN[(i + 1) % PLAN.length]
     const mx = (x1 + x2) / 2, mz = (z1 + z2) / 2
     let nx = -(z2 - z1), nz = x2 - x1 // normale all'asse
     const nl = Math.hypot(nx, nz); nx /= nl; nz /= nl
-    if (nx * -mx + nz * -mz < 0) { nx = -nx; nz = -nz } // verso l'interno
+    if (nx * -mx + nz * -mz < 0) { nx = -nx; nz = -nz } // toward the inside
     const L = Math.hypot(x2 - x1, z2 - z1)
     const g = new THREE.Group()
     const pm = new THREE.Mesh(panelGeo(L, holes), wallMat); pm.castShadow = true; pm.receiveShadow = true; g.add(pm)
@@ -297,7 +300,7 @@ export function createWorld(scene, renderer) {
     add(L, 0.22, 0.06, 0, 0.11, WALL_T / 2 + 0.03, trimMat)
     add(L, 0.95, 0.04, 0, 0.5, WALL_T / 2 + 0.02, dadoMat)
     add(L, 0.06, 0.08, 0, 1.0, WALL_T / 2 + 0.04, accentMat)
-    add(L, 0.16, 0.6, 0, H - 0.08, WALL_T / 2 + 0.26, trimMat) // cornice che sporge verso l'interno
+    add(L, 0.16, 0.6, 0, H - 0.08, WALL_T / 2 + 0.26, trimMat) // frame that sticks out toward the inside
     add(L, 0.04, 0.4, 0, H - 0.18, WALL_T / 2 + 0.3, accentMat)
     if (extra) extra(g, L)
     bakeShared(g)
@@ -322,7 +325,7 @@ export function createWorld(scene, renderer) {
   for (const i of [0, 1, 2, 6, 7]) pillar(i)
   void back
 
-  // ----- Sovrastrutture sul tetto e ala con pannelli solari -----
+  // ----- Rooftop superstructures and wing with solar panels -----
   const roof = new THREE.Group()
   const gear = (parent, fn) => { fn(parent) }
   gear(roof, (g) => {
@@ -333,7 +336,7 @@ export function createWorld(scene, renderer) {
     const dish = new THREE.Mesh(new THREE.SphereGeometry(1.1, 24, 10, 0, Math.PI * 2, Math.PI - 1.0, 1.0), new THREE.MeshStandardMaterial({ color: '#dfe6f8', roughness: 0.4, metalness: 0.3, side: THREE.DoubleSide }))
     dish.position.set(-8.4, 2.1, 0.1); dish.rotation.set(0.75, 0.4, 0); dish.castShadow = true; g.add(dish)
     cyl(g, 0.04, 0.04, 0.9, '#58648a', -8.4, 2.5, 0.6, 6).rotation.x = 0.9
-    // antenne con luce
+    // antennas with light
     for (const [x, h] of [[-4.2, 2.6], [-3.6, 1.8], [-3.0, 3.2]]) {
       cyl(g, 0.035, 0.05, h, '#aab6d6', x, h / 2, 0.1, 6)
       const tip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), glow(h > 3 ? 0xff4a4a : 0x4de0ff, 1.2)); tip.position.set(x, h + 0.05, 0.1); g.add(tip)
@@ -362,7 +365,7 @@ export function createWorld(scene, renderer) {
   wing.position.set(HX + 0.2, -0.45, -2.6); wing.rotation.y = -0.2
   root.add(wing)
 
-  // ----- Decorazioni statiche per ponte -----
+  // ----- Static decorations per deck -----
   let decor = new THREE.Group()
   root.add(decor)
   function wallScreen(g, x, y, z, w, h, ry, color) {
@@ -430,7 +433,7 @@ export function createWorld(scene, renderer) {
     bakeShared(decor)
   }
 
-  // ----- Stato scenario -----
+  // ----- Scene state -----
   let sceneName = 'bridge'
   function setScene(name) {
     sceneName = name
@@ -443,7 +446,7 @@ export function createWorld(scene, renderer) {
   }
   setScene('bridge')
 
-  // ----- Modalità luci -----
+  // ----- Light modes -----
   let mode = 'auto'
   let alert = false
   let target = MODES.normal
@@ -478,7 +481,7 @@ export function createWorld(scene, renderer) {
     accentMat.color.copy(cur.accent); accentMat.emissive.copy(cur.accent)
     accentMat.emissiveIntensity = (0.55 + cur.night * 0.9) * pulse
     for (const { m, base } of glowMats) m.emissiveIntensity = base * (0.7 + cur.night * 0.9)
-    // fari di segnalazione che lampeggiano piano
+    // beacon lights that blink slowly
     const blink = Math.sin(t * 3) > 0.2 ? 1 : 0.15
     navRed.material.emissiveIntensity = 1.4 * blink
     navGreen.material.emissiveIntensity = 1.4 * (Math.sin(t * 3 + 1.5) > 0.2 ? 1 : 0.15)

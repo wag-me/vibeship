@@ -1,17 +1,3 @@
-import { SCENES, SCENE_IDS, W, H } from './scenes.js'
-
-const PANE = 'agent-office'
-
-// Stato -> aspetto (colore e fumetto sopra la postazione)
-const STATUS = {
-  idle: { color: 'gray', bubble: ' z ', label: 'a riposo' },
-  read: { color: 'cyan', bubble: ' ? ', label: 'legge' },
-  write: { color: 'green', bubble: '...', label: 'scrive' },
-  run: { color: 'yellow', bubble: ' $ ', label: 'esegue comandi' },
-  web: { color: 'magenta', bubble: '@@@', label: 'cerca sul web' },
-  delegate: { color: 'blue', bubble: ' > ', label: 'delega' },
-}
-
 function statusOf(tool) {
   if (['Read', 'Grep', 'Glob'].includes(tool)) return 'read'
   if (['Edit', 'Write', 'NotebookEdit'].includes(tool)) return 'write'
@@ -21,75 +7,21 @@ function statusOf(tool) {
   return 'run'
 }
 
-// Stato del mod (si azzera al reload; scena e postazioni sono salvate in $.store)
-let sceneId = 'bridge'
-let deskCount = 3
-const agents = new Map([['main', { name: 'Claude', status: 'idle', detail: '' }]])
-
-// Un tool.call con agentId proviene da un subagente. Il primo tool.call di un subagente
-// appena lanciato (non ancora associato) ne prende il posto.
-function resolveAgent(agentId) {
-  if (!agentId) return 'main'
-  if (agents.has(agentId)) return agentId
-  for (const [key, a] of agents) {
-    if (key !== 'main' && !a.bound) {
-      agents.delete(key)
-      a.bound = true
-      agents.set(agentId, a)
-      return agentId
-    }
-  }
-  agents.set(agentId, { name: 'subagente', status: 'idle', detail: '', bound: true })
-  return agentId
-}
-
-function setStatus($, id, status, detail) {
-  const a = agents.get(id) ?? agents.get('main')
-  a.status = status
-  a.detail = detail ?? ''
-  $.ui.invalidate('ui.render')
-}
-
-function buildGrid() {
-  const scene = SCENES[sceneId]
-  const overlay = Array.from({ length: H }, () => Array(W).fill(null))
-  for (const d of scene.deco) overlay[d.y][d.x] = { g: d.g, color: d.color }
-
-  const desks = scene.slots.slice(0, deskCount)
-  const list = [...agents.values()]
-  desks.forEach(([x, y], i) => {
-    const a = list[i]
-    if (a) {
-      const s = STATUS[a.status]
-      overlay[y][x] = { g: '[@]', color: s.color }
-      if (y > 0) overlay[y - 1][x] = { g: s.bubble, color: s.color }
-    } else {
-      overlay[y][x] = { g: scene.deskGlyph, color: scene.deskColor }
-    }
-  })
-  // Chi non ha una postazione aspetta nella lobby (riga in basso)
-  list.slice(desks.length).forEach((a, i) => {
-    const x = i + 1
-    if (x < W) overlay[H - 1][x] = { g: ' @ ', color: STATUS[a.status].color }
-  })
-  return { scene, overlay, list }
-}
-
-// ---------- Finestra web (server locale + browser) ----------
-// Porta e cartella dati si possono cambiare con AGENT_OFFICE_PORT e AGENT_OFFICE_DIR (utile per provare senza disturbare altre finestre)
+// ---------- Web window (local server + browser) ----------
+// Port and data folder can be changed with AGENT_OFFICE_PORT and AGENT_OFFICE_DIR (handy to test without disturbing other windows)
 let BASE = 'http://127.0.0.1:47890'
 let dataDir = null
-let loc = null // luogo scelto con AGENT_OFFICE_LOC (bridge, engine, habitat)
-let look = null // aspetto scelto con AGENT_OFFICE_LOOK ("specie:maglietta")
-let agentName = null // nome scelto con AGENT_OFFICE_NAME; altrimenti si usa il nome della cartella
+let loc = null // location chosen with AGENT_OFFICE_LOC (bridge, engine, habitat)
+let look = null // look chosen with AGENT_OFFICE_LOOK ("species:shirt")
+let agentName = null // name chosen with AGENT_OFFICE_NAME; otherwise the folder name is used
 let sessionId = 'default'
 let serverStarting = false
-let turnId = null // turno in corso, serve per fermarlo dalla finestra
+let turnId = null // current turn, needed to stop it from the window
 let tokenCache = null
 let cancelPoll = null
 let polling = false
 
-// Il token sta in un file nella cartella dell'utente, scritto dal server all'avvio.
+// The token is in a file in the user's folder, written by the server at startup.
 async function readToken($) {
   if (tokenCache) return tokenCache
   let dir = dataDir
@@ -106,7 +38,7 @@ async function readToken($) {
   return tokenCache
 }
 
-// Ritira i comandi inviati dalla finestra (chat, stop) e li esegue in questa sessione.
+// Picks up the commands sent from the window (chat, stop) and runs them in this session.
 async function pollCommands($) {
   if (polling) return
   polling = true
@@ -118,9 +50,14 @@ async function pollCommands($) {
     if (!r.ok) return
     const { commands } = JSON.parse(r.text)
     for (const c of commands ?? []) {
-      if (c.kind === 'say' && c.text) {
+      if (c.kind === 'say' && c.text && /^\/[\w:.-]+(\s|$)/.test(String(c.text).trim())) {
+        const m = /^\/([\w:.-]+)\s*([\s\S]*)$/.exec(String(c.text).trim())
+        void runSlash($, c.id, m[1], m[2])
+      } else if (c.kind === 'commands') {
+        void sendCommandList($)
+      } else if (c.kind === 'say' && c.text) {
         const p = $.prompt.submit({ text: String(c.text), asUser: true })
-        send($, { type: 'say_delivered', id: c.id }) // la finestra mostra "consegnato"
+        send($, { type: 'say_delivered', id: c.id }) // the window shows "delivered"
         void p.catch(() => send($, { type: 'say_failed', id: c.id }))
       } else if (c.kind === 'close') {
         void closeSelf($)
@@ -129,14 +66,38 @@ async function pollCommands($) {
       }
     }
   } catch {
-    // server spento o risposta non valida: riprova al prossimo giro
+    // server off or invalid response: retry on the next round
   } finally {
     polling = false
   }
 }
 
-// Chiude questa sessione di Claude Code. Prima avvisa il server, poi ferma il processo che ci ospita.
-// Risale la catena dei processi fino a trovare claude/node/bun e ferma solo quello; se non lo trova, toglie l'agente dalla finestra e basta.
+// Runs a slash command typed in the window chat (/model, /compact, skills...) as if it was typed in the terminal.
+async function runSlash($, id, name, args) {
+  send($, { type: 'say_delivered', id })
+  // a plugin cannot run its own commands through $.command.run: answer these directly
+  if (name === 'vibeship') return send($, { type: 'command_result', id, ok: true, text: 'The Vibeship window is already open.' })
+  try {
+    const list = await $.command.list()
+    if (!list.some((x) => x.name === name)) return send($, { type: 'command_result', id, ok: false, text: 'Unknown command: /' + name })
+    const r = await $.command.run({ command: name, args })
+    send($, { type: 'command_result', id, ok: true, text: r && r.text ? String(r.text) : '' })
+  } catch (e) {
+    send($, { type: 'command_result', id, ok: false, text: String((e && e.message) || e).slice(0, 300) })
+  }
+}
+// Publishes the slash commands of this session (for the autocomplete of the window chat).
+async function sendCommandList($) {
+  try {
+    const list = await $.command.list()
+    send($, { type: 'commands', list: list.slice(0, 500).map((c) => ({ name: c.name, description: String(c.description || '').slice(0, 120) })) })
+  } catch {
+    // not available: the chat still works, only without suggestions
+  }
+}
+
+// Closes this Claude Code session. First tells the server, then stops the process hosting it.
+// Walks up the process chain until it finds claude/node/bun and stops only that one; if not found, it just removes the agent from the window.
 async function closeSelf($) {
   await sendNow($, { type: 'session_end' })
   const win = (await $.env.get('OS')) === 'Windows_NT'
@@ -149,11 +110,11 @@ async function closeSelf($) {
     if (!m || !/node|claude|bun|deno/i.test(m[2])) return
     await $.process.run(win ? ['taskkill', '/PID', m[1], '/F'] : ['kill', '-9', m[1]], { timeoutMs: 10000 })
   } catch {
-    // non disponibile in questo ambiente: l'agente resta tolto dalla finestra ma la sessione continua
+    // not available in this environment: the agent stays removed from the window but the session continues
   }
 }
 
-// Invia un evento al server locale senza aspettare la risposta (non rallenta Claude).
+// Sends an event to the local server without waiting for the response (does not slow Claude down).
 function send($, body) {
   $.http
     .fetch(BASE + '/api/event', {
@@ -164,12 +125,12 @@ function send($, body) {
     .catch(() => {})
 }
 
-// Come send ma aspetta che il server abbia registrato l'evento (serve prima di un'attesa lunga).
+// Like send but waits for the server to record the event (needed before a long wait).
 async function sendNow($, body) {
   try {
     await $.http.fetch(BASE + '/api/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: sessionId, ...body }) })
   } catch {
-    // server spento
+    // server off
   }
 }
 
@@ -189,8 +150,11 @@ async function windowOpen($) {
   }
 }
 
-// Mostra la richiesta di permesso nella finestra e aspetta la risposta (fino a ~32 s).
-// Senza risposta, o con la finestra chiusa, decide come prima: la domanda arriva nel terminale.
+// Tools the person allowed for the rest of this session from the window (the mod's memory: it resets on reload)
+const sessionAllowed = new Set()
+
+// Shows the permission request in the window and waits for the answer (up to ~32 s).
+// With no answer, or with the window closed, it decides as before: the question appears in the terminal.
 async function askWindow($, e, base) {
   if (!(await windowOpen($))) return base
   const token = await readToken($)
@@ -213,9 +177,10 @@ async function askWindow($, e, base) {
     send($, { type: 'permission_end', id })
     return base
   }
-  return decision === 'allow'
-    ? { decision: 'allow', reason: 'Consentito dalla finestra Vibeship' }
-    : { decision: 'deny', reason: 'Negato dalla finestra Vibeship' }
+  if (decision === 'allow_session') sessionAllowed.add(String(e.tool))
+  return decision === 'allow' || decision === 'allow_session'
+    ? { decision: 'allow', reason: decision === 'allow_session' ? 'Allowed for this session from the Vibeship window' : 'Allowed from the Vibeship window' }
+    : { decision: 'deny', reason: 'Denied from the Vibeship window' }
 }
 
 function detailOf(e) {
@@ -233,7 +198,7 @@ async function isServerUp($) {
   }
 }
 
-// Avvia il server come processo figlio: vive quanto la sessione e si chiude con lei.
+// Starts the server as a child process: it lives as long as the session and closes with it.
 async function ensureServer($) {
   if (serverStarting || (await isServerUp($))) return
   serverStarting = true
@@ -245,7 +210,7 @@ async function ensureServer($) {
         if (piece.text) $.ui.log(String(piece.text), { to: 'debug' })
       }
     } catch {
-      // node non disponibile: la finestra non parte, il pannello testuale resta
+      // node not available: the window does not start, the text panel remains
     } finally {
       serverStarting = false
     }
@@ -273,43 +238,28 @@ async function openWindow($) {
       const r = await $.process.run(argv, { timeoutMs: 5000 })
       if (r.exitCode === 0) return true
     } catch {
-      // prova il prossimo
+      // try the next one
     }
   }
   return false
 }
 
-// ---------- Comandi ----------
-// /vibeship apre la finestra 3D; /vibeship-text la vista testuale nel terminale.
-// /office e /office-pane sono i vecchi nomi: restano come alias nascosti (funzionano se li scrivi per intero).
+// ---------- Commands ----------
+// /vibeship opens the 3D window.
 async function runWindowCommand($) {
   const ok = await openWindow($)
   const cwd = await $.session.cwd()
   send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc })
-  return { text: ok ? 'Finestra Vibeship aperta: ' + BASE : 'Server avviato su ' + BASE + ' ma non sono riuscito ad aprire il browser: aprilo a mano.' }
-}
-async function runTextCommand($) {
-  await $.ui.open({ id: PANE, title: 'Vibeship', focus: true, closeOnEscape: true })
-  return {}
+  void sendCommandList($)
+  return { text: ok ? 'Vibeship window opened: ' + BASE : 'Server started on ' + BASE + ' but I could not open the browser: open it manually.' }
 }
 
 export function register(on) {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'vibeship',
-      description: 'Apri la finestra Vibeship (luoghi, postazioni, agenti al lavoro)',
+      description: 'Open the Vibeship window (locations, stations, agents at work)',
     })
-    await $.command.register({
-      name: 'vibeship-text',
-      description: 'Vista testuale di Vibeship dentro Claude Code',
-    })
-    await $.command.register({ name: 'office', description: 'Vecchio nome di /vibeship' })
-    await $.command.register({ name: 'office-pane', description: 'Vecchio nome di /vibeship-text' })
-    const saved = await $.store.get('agent-office')
-    if (saved && SCENES[saved.sceneId]) {
-      sceneId = saved.sceneId
-      deskCount = Math.min(Math.max(saved.deskCount ?? 3, 1), SCENES[sceneId].slots.length)
-    }
     const port = await $.env.get('AGENT_OFFICE_PORT')
     if (port && /^\d+$/.test(port)) BASE = 'http://127.0.0.1:' + port
     dataDir = (await $.env.get('AGENT_OFFICE_DIR')) ?? null
@@ -321,8 +271,8 @@ export function register(on) {
     if (cancelPoll) cancelPoll.cancel()
     cancelPoll = $.clock.every(1000, () => void pollCommands($))
     const cwd = await $.session.cwd()
-    // Se il server c'è già (finestra aperta), comunica la sessione; altrimenti parte con /vibeship
-    if (await isServerUp($)) send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc })
+    // If the server is already up (window open), report the session; otherwise it starts with /vibeship
+    if (await isServerUp($)) { send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc }); void sendCommandList($) }
     return next(e)
   })
 
@@ -334,13 +284,6 @@ export function register(on) {
   })
 
   on('command.run', { command: 'vibeship' }, async ($) => runWindowCommand($))
-  on('command.run', { command: 'vibeship-text' }, async ($) => runTextCommand($))
-  on('command.run', { command: 'office' }, async ($) => runWindowCommand($))
-  on('command.run', { command: 'office-pane' }, async ($) => runTextCommand($))
-
-  // i vecchi nomi non compaiono più nell'elenco dei comandi
-  on('command.describe', { command: 'office' }, async ($, e, next) => ({ ...(await next(e)), isHidden: true }))
-  on('command.describe', { command: 'office-pane' }, async ($, e, next) => ({ ...(await next(e)), isHidden: true }))
 
   on('turn.start', async ($, e, next) => {
     turnId = e.turnId
@@ -348,119 +291,35 @@ export function register(on) {
     return next(e)
   })
 
-  // Messaggi scritti nel terminale: compaiono anche nella chat della finestra
+  // Messages typed in the terminal: they also appear in the window chat
   on('prompt.submit', async ($, e, next) => {
-    if (e.origin?.kind !== 'plugin' && typeof e.text === 'string') send($, { type: 'prompt_in', text: e.text })
+    if (e.origin?.kind === 'composer' && typeof e.text === 'string') send($, { type: 'prompt_in', text: e.text })
     return next(e)
   })
 
-  // Permessi: se la finestra è aperta, la richiesta compare lì
+  // Permissions: if the window is open, the request appears there
   on('tool.check', async ($, e, next) => {
     const r = await next(e)
     if (r.decision !== 'ask' || !e.tool_use_id) return r
+    if (sessionAllowed.has(String(e.tool))) return { decision: 'allow', reason: 'Allowed for this session from the Vibeship window' }
     return askWindow($, e, r)
   })
 
   on('tool.call', async ($, e, next) => {
-    setStatus($, resolveAgent(e.agentId), statusOf(e.tool), e.tool)
     send($, { type: 'tool', agentId: e.agentId, status: statusOf(e.tool), detail: detailOf(e) })
     return next(e)
   })
 
   on('agent.spawn', async ($, e, next) => {
-    const name = e.name ?? e.subagentType ?? 'subagente'
-    agents.set(e.tool_use_id, { name: String(name), status: 'read', detail: e.description ?? 'in arrivo', bound: false })
-    $.ui.invalidate('ui.render')
+    const name = e.name ?? e.subagentType ?? 'subagent'
     send($, { type: 'spawn', toolUseId: e.tool_use_id, name: String(name), description: e.description })
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId) { send($, { type: 'sub_done', agentId: e.agentId, answer: e.answer, reason: e.reason }); return next(e) } // il subagente ha finito, ma non il turno principale
-    for (const id of [...agents.keys()]) if (id !== 'main') agents.delete(id)
-    setStatus($, 'main', 'idle', '')
+    if (e.agentId) { send($, { type: 'sub_done', agentId: e.agentId, answer: e.answer, reason: e.reason }); return next(e) } // the subagent is done, but not the main turn
     turnId = null
     send($, { type: 'turn_complete', answer: e.answer, reason: e.reason })
     return next(e)
-  })
-
-  on('ui.render', { component: 'Pane' }, async ($, e, next) => {
-    if (e.requestId !== PANE) return next(e)
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const redraw = () => $.ui.invalidate('ui.render')
-    const { scene, overlay, list } = buildGrid()
-    const maxSlots = scene.slots.length
-
-    const rows = overlay.map((row, y) =>
-      Box({
-        key: 'row-' + y,
-        flexDirection: 'row',
-        children: row.map((cell, x) =>
-          cell
-            ? Text({ key: 'c-' + x + '-' + y, color: cell.color, bold: true, children: [cell.g] })
-            : Text({ key: 'c-' + x + '-' + y, dimColor: true, children: [scene.floor] }),
-        ),
-      }),
-    )
-
-    const sceneButtons = SCENE_IDS.map((id, i) =>
-      Button({
-        key: 'scene-' + id,
-        label: (id === sceneId ? '● ' : '○ ') + SCENES[id].label,
-        hotkey: String(i + 1),
-        plain: true,
-        dimColor: id !== sceneId,
-        onPress: async () => {
-          sceneId = id
-          deskCount = Math.min(deskCount, SCENES[id].slots.length)
-          redraw()
-          await $.store.set('agent-office', { sceneId, deskCount })
-        },
-      }),
-    )
-
-    const legend = list.map((a, i) =>
-      Text({
-        key: 'agent-' + i,
-        color: STATUS[a.status].color,
-        children: ['@ ' + a.name + ' · ' + STATUS[a.status].label + (a.detail ? ' (' + a.detail + ')' : '')],
-      }),
-    )
-
-    return Box({
-      flexDirection: 'column',
-      children: [
-        Box({ flexDirection: 'row', columnGap: 3, children: sceneButtons }),
-        Box({ key: 'grid', flexDirection: 'column', children: rows }),
-        Box({
-          flexDirection: 'row',
-          columnGap: 3,
-          children: [
-            Button({
-              key: 'add',
-              label: '[a] + ' + scene.stationName,
-              hotkey: 'a',
-              onPress: async () => {
-                if (deskCount < maxSlots) deskCount += 1
-                redraw()
-                await $.store.set('agent-office', { sceneId, deskCount })
-              },
-            }),
-            Button({
-              key: 'remove',
-              label: '[r] - rimuovi',
-              hotkey: 'r',
-              onPress: async () => {
-                if (deskCount > 1) deskCount -= 1
-                redraw()
-                await $.store.set('agent-office', { sceneId, deskCount })
-              },
-            }),
-            Text({ dimColor: true, children: ['postazioni ' + deskCount + '/' + maxSlots] }),
-          ],
-        }),
-        Box({ flexDirection: 'column', children: legend }),
-      ],
-    })
   })
 }

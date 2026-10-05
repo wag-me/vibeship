@@ -1,4 +1,4 @@
-// Vibeship 3D: orchestra scena, interazione, agenti e collegamento al server.
+// Vibeship 3D: orchestrates scene, interaction, agents and the connection to the server.
 import { THREE, disposeGroup, holo } from './lib.js'
 import { ROOM, BOUNDS, createWorld, TOD_ORDER } from './world.js'
 import { CATALOG, CATEGORIES, catalogFor, buildModel, buildPad } from './models.js'
@@ -12,19 +12,19 @@ const lerp = (a, b, k) => a + (b - a) * k
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d }
 const hashOf = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h }
 
-// ---------- Stati ----------
+// ---------- States ----------
 const STATUS = {
-  idle:     { icon: '💤', text: 'a riposo' },
-  read:     { icon: '📖', text: 'legge e pensa' },
-  write:    { icon: '⌨️', text: 'scrive' },
-  run:      { icon: '💻', text: 'esegue comandi' },
-  web:      { icon: '🌐', text: 'cerca sul web' },
-  delegate: { icon: '📨', text: 'delega' },
-  error:    { icon: '⚠️', text: 'ha un problema' },
+  idle:     { icon: '💤', text: 'idle' },
+  read:     { icon: '📖', text: 'reading and thinking' },
+  write:    { icon: '⌨️', text: 'writing' },
+  run:      { icon: '💻', text: 'running commands' },
+  web:      { icon: '🌐', text: 'searching the web' },
+  delegate: { icon: '📨', text: 'delegating' },
+  error:    { icon: '⚠️', text: 'has a problem' },
 }
 const MODE_OF = { read: 'think', write: 'typing', run: 'typing', web: 'think', delegate: 'typing', error: 'alert' }
 
-// ---------- Layout predefiniti (coordinate in metri, rot in radianti) ----------
+// ---------- Default layouts (coordinates in meters, rot in radians) ----------
 const DEFAULTS = {
   bridge: [
     ['console', -7, -3.4], ['console', -2.3, -3.4], ['console', 2.4, -3.4], ['console', 7, -3.4],
@@ -47,19 +47,19 @@ const DEFAULTS = {
   ],
 }
 const SCENES = [
-  { id: 'bridge', label: 'Plancia', icon: '🚀' },
-  { id: 'engine', label: 'Sala macchine', icon: '⚙️' },
-  { id: 'habitat', label: 'Serra', icon: '🌿' },
+  { id: 'bridge', label: 'Bridge', icon: '🚀' },
+  { id: 'engine', label: 'Engine room', icon: '⚙️' },
+  { id: 'habitat', label: 'Greenhouse', icon: '🌿' },
 ]
-// Il portello nell'angolo in fondo a sinistra: da lì gli agenti entrano ed escono dal ponte
+// The hatch in the back-left corner: agents enter and leave the deck through it
 const DOOR = { x: -11.2, z: -6.3 }
 const DOOR_ZONE = { x0: -12, x1: -10, z0: -7, z1: -5 }
-// Il pad di lancio dei subagenti: uguale in ogni luogo, non si può togliere né aggiungere, e non ci si mettono mobili sopra
+// The subagent launch pad: the same in every location, it cannot be removed or added, and no furniture goes on it
 const PAD = { x: 0, z: 3.4 }
 const PAD_ZONE = { x0: -2.1, x1: 2.1, z0: 1.3, z1: 5.5 }
 const LOC_LABEL = Object.fromEntries(SCENES.map((s) => [s.id, s.label]))
 const TOD_ICON = { auto: '🛰️', normal: '💡', alert: '🚨', dim: '🌙' }
-const TOD_LABEL = { auto: 'Automatico', normal: 'Luci normali', alert: 'Allerta rossa', dim: 'Luci soffuse' }
+const TOD_LABEL = { auto: 'Automatic', normal: 'Normal lights', alert: 'Red alert', dim: 'Dimmed lights' }
 
 // ---------- Renderer ----------
 let renderer
@@ -106,14 +106,14 @@ function resize() {
 new ResizeObserver(resize).observe($('stage'))
 resize()
 
-// ---------- Layout e mobili ----------
+// ---------- Layout and furniture ----------
 let layout = { scene: 'bridge', scenes: {} }
 let sceneName = 'bridge'
 const keyOf = (s) => s + '@3'
 function items() {
   const k = keyOf(sceneName)
   if (!layout.scenes[k]) layout.scenes[k] = DEFAULTS[sceneName].map(([type, x, z, rot], i) => ({ id: sceneName + '-d' + i, type, x, z, rot: rot ?? (CATALOG[type]?.work ? Math.PI : 0) }))
-  if (layout.scenes[k].some((i) => !CATALOG[i.type])) layout.scenes[k] = layout.scenes[k].filter((i) => CATALOG[i.type]) // tipi non più in catalogo (es. il vecchio pad)
+  if (layout.scenes[k].some((i) => !CATALOG[i.type])) layout.scenes[k] = layout.scenes[k].filter((i) => CATALOG[i.type]) // types no longer in the catalog (e.g. the old pad)
   return layout.scenes[k]
 }
 const furn = new Map()
@@ -137,8 +137,8 @@ function clampItem(it) {
 function overlaps(it) {
   if (CATALOG[it.type].flat) return false
   const a = aabb(it)
-  if (a.x0 < DOOR_ZONE.x1 && a.x1 > DOOR_ZONE.x0 && a.z0 < DOOR_ZONE.z1 && a.z1 > DOOR_ZONE.z0) return true // davanti al portello si passa
-  if (a.x0 < PAD_ZONE.x1 && a.x1 > PAD_ZONE.x0 && a.z0 < PAD_ZONE.z1 && a.z1 > PAD_ZONE.z0) return true // il pad di lancio resta libero
+  if (a.x0 < DOOR_ZONE.x1 && a.x1 > DOOR_ZONE.x0 && a.z0 < DOOR_ZONE.z1 && a.z1 > DOOR_ZONE.z0) return true // the area in front of the hatch stays clear
+  if (a.x0 < PAD_ZONE.x1 && a.x1 > PAD_ZONE.x0 && a.z0 < PAD_ZONE.z1 && a.z1 > PAD_ZONE.z0) return true // the launch pad stays free
   for (const o of items()) {
     if (o.id === it.id || CATALOG[o.type].flat) continue
     const b = aabb(o)
@@ -174,7 +174,7 @@ function populate(animated = true) {
   clearFurniture()
   items().forEach((it, i) => spawnFurniture(it, animated ? i * 0.04 : -1))
 }
-// Allinea i mobili in scena con il layout (usato dopo aggiornamenti dal server)
+// Aligns the furniture in the scene with the layout (used after updates from the server)
 function syncFurniture() {
   const list = items()
   const ids = new Set(list.map((i) => i.id))
@@ -186,7 +186,8 @@ function syncFurniture() {
   })
 }
 
-// ---------- Selezione, anello, ghost ----------
+// ---------- Selection, ring, ghost ----------
+let editMode = false // furniture and agents can only be moved, added or removed in edit mode
 let selected = null // { kind:'furn', id } | { kind:'agent', key }
 let hovered = null
 const selRing = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 48), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }))
@@ -199,15 +200,18 @@ const ghost = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicM
 ghost.rotation.x = -Math.PI / 2; ghost.position.y = 0.035; ghost.visible = false; ghost.renderOrder = 3
 scene.add(ghost)
 
+let manualCam = false // WASD took the camera away from the selected agent
 function select(sel) {
   selected = sel
+  manualCam = false
   const f = sel?.kind === 'furn' ? furn.get(sel.id) : null
-  $('rot').disabled = !f
-  $('del').disabled = !f
+  $('rot').disabled = !f || !editMode
+  $('del').disabled = !f || !editMode
+  $('seatbar').hidden = !(f && f.def.work)
   if (sel?.kind === 'agent') { openCard(sel.key); goal.zoom = 0.72 } else { closeCard(); goal.zoom = DEFAULT_GOAL.zoom; goal.target.set(0, 0.8, 0.4) }
 }
 
-// ---------- Agenti ----------
+// ---------- Agents ----------
 const agents = new Map()
 const labels = $('labels')
 let agentData = []
@@ -226,22 +230,25 @@ function ensureAgent(a) {
   const look = a.look || {}
   let species = look.species && SPECIES[look.species] ? look.species : null
   if (!species) {
-    // scelta in base all'identificativo, evitando se possibile specie già presenti in stanza
+    // chosen from the identifier, avoiding species already in the room when possible
     const used = new Set([...agents.values()].map((x) => x.species))
     for (let i = 0; i < SPECIES_IDS.length; i++) {
       const s = SPECIES_IDS[(h + i) % SPECIES_IDS.length]
       if (!used.has(s) || i === SPECIES_IDS.length - 1) { species = s; break }
     }
   }
-  const shirtIdx = a.kind === 'sub' ? 6 : Number.isInteger(look.shirt) ? look.shirt : (h >>> 4) % SHIRTS.length // i subagenti sono cadetti
+  const shirtIdx = a.kind === 'sub' ? 6 : Number.isInteger(look.shirt) ? look.shirt : (h >>> 4) % SHIRTS.length // subagents are cadets
   const char = createCharacter(species, shirtIdx)
   char.root.userData.owner = { kind: 'agent', key: a.key }
   const loc = a.loc || 'bridge'
-  // entra dal portello (angolo in fondo a sinistra)
+  // an agent launched from a station sits there once it arrives
+  let pin = null
+  if (a.kind === 'main' && pendingSeat && performance.now() < pendingSeat.until && loc === pendingSeat.scene) { pin = { station: pendingSeat.id }; pendingSeat = null }
+  // enters through the hatch (back-left corner)
   char.root.position.set(DOOR.x, 0, DOOR.z)
   char.root.visible = loc === sceneName
   scene.add(char.root)
-  ag = { key: a.key, data: a, char, species, yaw: Math.PI * 1.1, moving: false, lift: 0, dragging: false, pin: null, hover: 0, tag: makeTag(a), fxT: 0, activeSince: 0, lastStatus: 'idle', idleSince: performance.now(), cheerUntil: 0, wantSit: false, loc, leaving: false, nextLoc: null, baseScale: a.kind === 'sub' ? 0.82 : 1, mat: null, wasDone: false }
+  ag = { key: a.key, data: a, char, species, yaw: Math.PI * 1.1, moving: false, lift: 0, dragging: false, pin, hover: 0, tag: makeTag(a), fxT: 0, activeSince: 0, lastStatus: 'idle', idleSince: performance.now(), cheerUntil: 0, wantSit: false, loc, leaving: false, nextLoc: null, baseScale: a.kind === 'sub' ? 0.82 : 1, mat: null, wasDone: false }
   agents.set(a.key, ag)
   if (a.kind === 'sub' && loc === sceneName) launchMission(ag)
   if (loc === sceneName && a.kind !== 'sub') fx.emit('puff', char.root.position.clone().add(new THREE.Vector3(0, 1, 0)), { size: 1.2, life: 0.7, vel: new THREE.Vector3(0, 0.2, 0), grow: 1.5 })
@@ -250,6 +257,7 @@ function ensureAgent(a) {
 function removeAgent(key) {
   const ag = agents.get(key)
   if (!ag) return
+  endTask(ag)
   if (ag.data.kind === 'sub' && ag.loc === sceneName && ag.char.root.visible) {
     const p = ag.char.root.position.clone(); p.y = 1
     fx.burst('star', p, 6, 1.4, 0.24)
@@ -272,13 +280,13 @@ function onAgents(list) {
     const newLoc = a.loc || 'bridge'
     if (ag.loc !== newLoc && !(ag.leaving && ag.nextLoc === newLoc)) changeLoc(ag, newLoc)
     if (a.done && (!ag.wasDone || (a.result && !ag.gotResult))) {
-      // missione compiuta: il subagente mostra il risultato (se arriva dopo, aggiorna il fumetto)
+      // mission accomplished: the subagent shows the result (if it arrives later, the bubble is updated)
       const first = !ag.wasDone
       ag.wasDone = true
       if (a.result) ag.gotResult = true
       if (ag.loc === sceneName) {
         const txt = (a.result || '').trim()
-        say(ag, txt ? '✔ ' + (txt.length > 130 ? txt.slice(0, 127) + '…' : txt) : '✔ Missione compiuta!', 9000)
+        say(ag, txt ? '✔ ' + (txt.length > 130 ? txt.slice(0, 127) + '…' : txt) : '✔ Mission accomplished!', 9000)
         if (first) {
           ag.cheerUntil = now + 2600
           sfx.done()
@@ -296,16 +304,16 @@ function onAgents(list) {
       ag.lastStatus = a.status
     }
   }
-  $('count').textContent = list.length + (list.length === 1 ? ' abitante' : ' abitanti')
+  $('count').textContent = list.length + (list.length === 1 ? ' resident' : ' residents')
   updateSceneButtons()
   if (selected?.kind === 'agent') updateCard()
 }
 
-// ---- Luoghi: ogni agente sta in un ponte e si vede solo lì ----
+// ---- Locations: each agent is on one deck and is only visible there ----
 function changeLoc(ag, newLoc) {
   ag.pin = null
   if (ag.loc === sceneName) {
-    // lo vedo andare verso il portello e uscire
+    // I see it walk to the hatch and leave
     ag.leaving = true
     ag.nextLoc = newLoc
   } else {
@@ -333,7 +341,7 @@ function finishLeave(ag) {
   if (selected?.kind === 'agent' && selected.key === ag.key) select(null)
   updateSceneButtons()
 }
-// Dopo un cambio di ponte gli agenti di quel ponte sono già ai loro posti (non devono rifare tutta la strada)
+// After a deck change the agents on that deck are already at their places (they do not have to walk the whole way again)
 function snapAgents() {
   const targets = computeTargets()
   for (const ag of agents.values()) {
@@ -358,7 +366,7 @@ function celebrate(ag) {
   fx.burst('star', p, 9, 1.8, 0.32)
 }
 
-// Assegna agenti a postazioni e punti di attesa
+// Assigns agents to stations and waiting spots
 const lobby = [[-6, 5.8], [-4, 5.4], [5, 5.8], [6.5, 5.4], [8.5, 5.8], [-8, 5.4], [3.4, 6.3], [-2.9, 6.3]]
 function seatWorld(f) {
   const s = f.def.seat, r = f.item.rot
@@ -383,7 +391,7 @@ function computeTargets() {
     const f = stations.find((s) => !used.has(s.id))
     if (f) { used.add(f.id); out.set(ag.key, seatWorld(f)) } else { const [x, z] = lobby[li++ % lobby.length]; out.set(ag.key, { x, z, yaw: 0.3, sit: false, lobby: true }) }
   }
-  // i subagenti: in cerchio attorno al pad; a missione finita tornano accanto all'agente principale
+  // subagents: in a circle around the pad; when the mission is over they return next to the main agent
   const subs = all.filter((x) => x.data.kind === 'sub').sort((a, b) => a.key.localeCompare(b.key))
   const active = subs.filter((s) => !s.data.done)
   for (const s of subs) {
@@ -400,16 +408,83 @@ function computeTargets() {
   return out
 }
 
+// ---------- Life in the room: subagents roam while their task runs; idle agents without a station do too ----------
+// An agent with nothing to do picks one of: sit on a free seat (sofa, armchair), go and look at an object, or stroll.
+const claims = new Map() // seat key -> agent key (a seat takes one agent)
+const inZone = (x, z, Z) => x > Z.x0 && x < Z.x1 && z > Z.z0 && z < Z.z1
+function endTask(ag) {
+  if (!ag.task) return
+  if (ag.task.seatKey) claims.delete(ag.task.seatKey)
+  ag.task = null
+  ag.nextTaskAt = performance.now() + 600 + Math.random() * 2400
+}
+function restSeats() {
+  const out = []
+  for (const f of furn.values()) {
+    if (!f.def.rest || f.removing || f.dragging) continue
+    const r = f.item.rot, c = Math.cos(r), sn = Math.sin(r)
+    f.def.rest.forEach((p, i) => out.push({ key: f.id + '#' + i, furnId: f.id, x: f.item.x + c * p.x + sn * p.z, z: f.item.z - sn * p.x + c * p.z, yaw: r }))
+  }
+  return out
+}
+function pickTask(ag) {
+  const roll = Math.random()
+  const seats = restSeats().filter((s) => !claims.has(s.key))
+  if (roll < 0.45 && seats.length) {
+    const s = seats[Math.floor(Math.random() * seats.length)]
+    claims.set(s.key, ag.key)
+    return { type: 'sit', seatKey: s.key, furnId: s.furnId, target: { x: s.x, z: s.z, yaw: s.yaw, sit: true }, dwell: 6000 + Math.random() * 9000, at: 0 }
+  }
+  if (roll < 0.8) {
+    const list = [...furn.values()].filter((f) => !f.def.flat && !f.removing && !f.dragging)
+    if (list.length) {
+      const f = list[Math.floor(Math.random() * list.length)]
+      const a = aabb(f.item)
+      let dx = -f.item.x, dz = -f.item.z
+      const l = Math.hypot(dx, dz) || 1
+      dx /= l; dz /= l // stands on the side facing the middle of the room
+      const d = Math.max(a.hw, a.hd) + 0.95
+      const x = clamp(f.item.x + dx * d, BOUNDS.minX + 0.6, BOUNDS.maxX - 0.6), z = clamp(f.item.z + dz * d, BOUNDS.minZ + 0.8, BOUNDS.maxZ - 0.6)
+      return { type: 'look', furnId: f.id, target: { x, z, yaw: Math.atan2(f.item.x - x, f.item.z - z), sit: false }, dwell: 3500 + Math.random() * 4500, at: 0 }
+    }
+  }
+  for (let i = 0; i < 12; i++) {
+    const x = -9 + Math.random() * 18, z = -4.5 + Math.random() * 10
+    if (inZone(x, z, PAD_ZONE) || inZone(x, z, DOOR_ZONE)) continue
+    return { type: 'walk', target: { x, z, yaw: Math.random() * Math.PI * 2, sit: false }, dwell: 600 + Math.random() * 1800, at: 0 }
+  }
+  return null
+}
+// Where this agent should be going because of its free time, or null when it has real business (work, leaving, being moved)
+function lifeTargetFor(ag, tg, now) {
+  const sub = ag.data.kind === 'sub'
+  const free = !ag.leaving && !ag.dragging && !ag.hold && !ag.pin && !ag.mat && (sub ? !ag.data.done : ag.data.status === 'idle' && !!tg?.lobby)
+  if (!free) { endTask(ag); return null }
+  if (ag.task?.furnId && !furn.has(ag.task.furnId)) endTask(ag)
+  if (!ag.task) {
+    if (now < (ag.nextTaskAt ?? 0) || (!sub && now - ag.idleSince < 5000)) return null
+    ag.task = pickTask(ag)
+    if (!ag.task) return null
+  }
+  const t = ag.task, p = ag.char.root.position
+  if (!t.at && Math.hypot(t.target.x - p.x, t.target.z - p.z) < 0.08 && (!t.target.sit || ag.char.state.sit > 0.9)) t.at = now
+  if (t.at && now - t.at > t.dwell) { endTask(ag); return null }
+  return t.target
+}
+
 function updateAgents(dt, t, now) {
   const targets = computeTargets()
   const v = new THREE.Vector3()
   for (const ag of agents.values()) {
     const here = ag.loc === sceneName
     ag.char.root.visible = here
-    if (!here) { ag.tag.style.display = 'none'; continue }
-    if (ag.mat?.phase === 'wait') { ag.char.root.visible = false; ag.tag.style.display = 'none'; continue } // il drone non è ancora arrivato
+    if (!here) { endTask(ag); ag.tag.style.display = 'none'; continue }
+    if (ag.mat?.phase === 'wait') { ag.char.root.visible = false; ag.tag.style.display = 'none'; continue } // the drone has not arrived yet
     let tg = targets.get(ag.key)
+    if (ag.hold && !ag.leaving) tg = { x: ag.hold.x, z: ag.hold.z, yaw: ag.yaw, sit: false }
     if (ag.leaving) tg = { x: DOOR.x, z: DOOR.z, yaw: 2.4, sit: false }
+    const lifeTarget = lifeTargetFor(ag, tg, now)
+    if (lifeTarget) tg = lifeTarget
     const r = ag.char.root
     if (ag.leaving && Math.hypot(DOOR.x - r.position.x, DOOR.z - r.position.z) < 0.5) { finishLeave(ag); continue }
     const st = ag.data.status
@@ -453,7 +528,7 @@ function updateAgents(dt, t, now) {
     r.scale.setScalar(sc)
     r.rotation.y = ag.yaw
 
-    // effetti di stato
+    // status effects
     ag.fxT -= dt
     if (ag.fxT <= 0 && !ag.moving) {
       v.copy(r.position); v.y += 1.9
@@ -463,7 +538,7 @@ function updateAgents(dt, t, now) {
       else if (selected?.kind === 'agent' && selected.key === ag.key) { fx.emit('star', v.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, -0.3, (Math.random() - 0.5) * 0.6)), { size: 0.18, life: 1.0, vel: new THREE.Vector3(0, 0.5, 0), spin: 1.2 }); ag.fxT = 0.35 }
     }
 
-    // etichetta
+    // label
     const tagEl = ag.tag
     v.set(r.position.x, 2.05 * 0.9 + (ag.wantSit ? -0.2 : 0) + ag.lift, r.position.z).project(camera)
     const visible = v.z < 1
@@ -475,14 +550,14 @@ function updateAgents(dt, t, now) {
     if (nm.textContent !== ag.data.name) nm.textContent = ag.data.name
     const chip = tagEl.querySelector('.chip')
     const showChip = asking || mode !== 'idle' && mode !== 'look' || st !== 'idle'
-    // fumetto con la risposta o un breve feedback
+    // bubble with the reply or a short feedback
     const sp = tagEl.querySelector('.speech')
     if (ag.say && now < ag.say.until) {
       if (sp.textContent !== ag.say.text) sp.textContent = ag.say.text
       sp.classList.toggle('small', !!ag.say.small)
       sp.hidden = false
     } else if (ag.data.kind === 'sub' && ag.data.task && !ag.data.done) {
-      // il compito del subagente resta sul cartellino finché lavora
+      // the subagent's task stays on its tag while it works
       const txt = '📋 ' + (ag.data.task.length > 56 ? ag.data.task.slice(0, 55) + '…' : ag.data.task)
       if (sp.textContent !== txt) sp.textContent = txt
       sp.classList.add('small')
@@ -491,7 +566,7 @@ function updateAgents(dt, t, now) {
     if (showChip) {
       const s = STATUS[mode === 'sleep' ? 'idle' : mode === 'cheer' ? 'idle' : st] ?? STATUS.idle
       const icon = asking ? '🔔' : mode === 'cheer' ? '🎉' : mode === 'sleep' ? '💤' : s.icon
-      const text = asking ? 'chiede il permesso' : mode === 'cheer' ? 'fatto!' : mode === 'sleep' ? 'dorme' : ag.data.detail || s.text
+      const text = asking ? 'asks for permission' : mode === 'cheer' ? 'done!' : mode === 'sleep' ? 'sleeping' : ag.data.detail || s.text
       chip.hidden = false
       chip.querySelector('.e').textContent = icon
       if (chip.querySelector('b').textContent !== text) chip.querySelector('b').textContent = text
@@ -499,9 +574,9 @@ function updateAgents(dt, t, now) {
   }
 }
 
-// ---------- Missioni dei subagenti: pad fisso, drone di lancio, raggio, materializzazione ----------
+// ---------- Subagent missions: fixed pad, launch drone, beam, materialization ----------
 const drones = []
-const links = new Map() // chiave del subagente -> raggio verso l'agente principale
+const links = new Map() // subagent key -> beam to the main agent
 const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 3.2, 28, 1, true), holo(0x4de0ff, 0.9, 0.5))
 beam.position.set(PAD.x, 1.6, PAD.z); beam.visible = false
 scene.add(beam)
@@ -527,7 +602,7 @@ function startMaterialize(ag) {
   fx.burst('star', new THREE.Vector3(PAD.x, 1.2, PAD.z), 10, 1.6, 0.28)
   sfx.select()
 }
-// Un subagente appena partito: l'agente principale lancia un drone che atterra sul pad e lo fa materializzare
+// A freshly started subagent: the main agent launches a drone that lands on the pad and makes it materialize
 function launchMission(ag) {
   const parent = mainAgentOf(ag.data.session)
   ag.mat = { phase: 'wait', t: 0 }
@@ -537,7 +612,7 @@ function launchMission(ag) {
     const mesh = makeDrone(); mesh.position.copy(from); scene.add(mesh)
     drones.push({ mesh, from, to: new THREE.Vector3(PAD.x, 1.0, PAD.z), t: 0, ag })
     parent.cheerUntil = performance.now() + 1100
-    say(parent, 'Missione! 🚀', 1800, true)
+    say(parent, 'Mission! 🚀', 1800, true)
     sfx.pick()
   } else startMaterialize(ag)
 }
@@ -559,7 +634,7 @@ function updateMissions(dt) {
     if (Math.random() < dt * 22) fx.emit('puff', d.mesh.position.clone(), { size: 0.22, life: 0.5, vel: new THREE.Vector3(0, 0.1, 0), grow: 1 })
     if (k >= 1) { scene.remove(d.mesh); drones.splice(i, 1); startMaterialize(d.ag) }
   }
-  // raggio luminoso tra ogni subagente e il suo agente principale
+  // light beam between each subagent and its main agent
   const seen = new Set()
   for (const ag of agents.values()) {
     if (ag.data.kind !== 'sub' || ag.loc !== sceneName || !ag.char.root.visible || ag.mat?.phase === 'wait') continue
@@ -578,7 +653,7 @@ function updateMissions(dt) {
   for (const [k, m] of links) if (!seen.has(k)) { scene.remove(m); links.delete(k) }
 }
 
-// ---------- Aggiornamento mobili ----------
+// ---------- Furniture update ----------
 function updateFurniture(dt, t) {
   const k = Math.min(1, dt * 12)
   for (const f of furn.values()) {
@@ -590,7 +665,7 @@ function updateFurniture(dt, t) {
     f.hover = lerp(f.hover, hov ? 1 : 0, Math.min(1, dt * 12))
     const ty = f.dragging ? 0.32 : f.def.flat ? 0 : f.hover * 0.07
     g.position.y = lerp(g.position.y, ty, Math.min(1, dt * 14))
-    // comparsa con un po' di rimbalzo, poi squash & stretch ai click/drop
+    // appears with a bit of bounce, then squash & stretch on click/drop
     if (f.delay > 0) { f.delay -= dt; f.model.inner.scale.setScalar(0.001) }
     else if (f.appearT < 1) {
       f.appearT = Math.min(1, f.appearT + dt / 0.5)
@@ -601,11 +676,11 @@ function updateFurniture(dt, t) {
       const b = Math.exp(-f.bounceT * 6) * Math.cos(f.bounceT * 20)
       f.model.inner.scale.set(1 - 0.08 * b, 1 + 0.12 * b, 1 - 0.08 * b)
     }
-    // oscillazioni (foglie)
+    // swaying (leaves)
     for (const s of f.model.sway) s.obj.rotation[s.axis ?? 'z'] = (s.base ?? 0) + Math.sin(t * s.speed + s.phase) * s.amp
     for (const s of f.model.spin) s.obj.rotation[s.axis ?? 'y'] += s.speed * dt
   }
-  // lampeggio LED dei rack
+  // rack LED blinking
   if (Math.floor(t * 4) !== lastBlink) {
     lastBlink = Math.floor(t * 4)
     for (const f of furn.values()) for (const m of f.model.blink) m.emissiveIntensity = Math.random() > 0.35 ? 1.4 : 0.15
@@ -630,7 +705,7 @@ function updateSelection(t) {
   }
 }
 
-// ---------- Interazione ----------
+// ---------- Interaction ----------
 const canvas = $('gl')
 const ray = new THREE.Raycaster()
 const ndc = new THREE.Vector2()
@@ -671,16 +746,20 @@ function describe(o) {
   const ag = agents.get(o.key)
   if (!ag) return ''
   const s = STATUS[ag.data.status] ?? STATUS.idle
-  return `${ag.data.name}${ag.data.kind === 'sub' ? ' (subagente)' : ''} · ${SPECIES[ag.species]?.label ?? ''} · ${s.text}`
+  return `${ag.data.name}${ag.data.kind === 'sub' ? ' (subagent)' : ''} · ${SPECIES[ag.species]?.label ?? ''} · ${s.text}`
 }
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 canvas.addEventListener('pointerdown', (e) => {
   try { canvas.setPointerCapture(e.pointerId) } catch {}
   setTip('')
+  if (pendingAsk) resolveAsk(false) // starting something else drops a move that was not confirmed
   if (e.button === 2 || e.button === 1) { drag = { kind: 'orbit', x: e.clientX, y: e.clientY, moved: true }; return }
   const o = pickOwner(e)
-  if (o) {
+  if (o && !editMode) {
+    // outside edit mode a click selects, a drag moves the view: nothing gets moved by accident
+    drag = { kind: 'pan', x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, click: o }
+  } else if (o) {
     const p = floorPoint(e)
     if (o.kind === 'furn') {
       const f = furn.get(o.id)
@@ -762,12 +841,14 @@ function endDrag(e) {
     const f = d.f
     f.dragging = false
     if (d.moved && d.cand) {
-      if (d.cand.valid) {
-        if (f.item.x !== d.cand.x || f.item.z !== d.cand.z) { f.item.x = d.cand.x; f.item.z = d.cand.z; saveLayout() }
-        sfx.place()
-      } else { toast('Non c\'è spazio qui'); sfx.error() }
-      f.tx = f.item.x; f.tz = f.item.z
-      f.bounceT = 0
+      const cand = d.cand
+      const back = () => { f.tx = f.item.x; f.tz = f.item.z; f.bounceT = 0 }
+      if (!cand.valid) { toast('No room here'); sfx.error(); back() }
+      else if (f.item.x !== cand.x || f.item.z !== cand.z) {
+        // the furniture waits at the new spot until the move is confirmed
+        f.tx = cand.x; f.tz = cand.z
+        askConfirm('Move ' + f.def.label + ' here?', () => { f.item.x = cand.x; f.item.z = cand.z; f.bounceT = 0; saveLayout(); sfx.place() }, back)
+      } else back()
     } else if (!d.moved) {
       select({ kind: 'furn', id: f.id }); f.bounceT = 0; sfx.click()
     }
@@ -777,18 +858,32 @@ function endDrag(e) {
     document.querySelectorAll('#scenes .btn.drop').forEach((b) => b.classList.remove('drop'))
     if (d.moved) {
       const tab = document.elementFromPoint(e.clientX, e.clientY)?.closest('#scenes .btn')
-      if (tab && tab.dataset.scene && tab.dataset.scene !== sceneName) { sendMove(ag, tab.dataset.scene); ag.char.state.hop = 0.25; return }
-      const pos = ag.char.root.position
+      if (tab && tab.dataset.scene && tab.dataset.scene !== sceneName) {
+        const to = tab.dataset.scene
+        askConfirm('Move ' + ag.data.name + ' to ' + (LOC_LABEL[to] ?? to) + '?', () => { sendMove(ag, to); ag.char.state.hop = 0.25 })
+        return
+      }
+      const pos = ag.char.root.position.clone()
       let best = null, bd = 2.2
       for (const f of furn.values()) if (f.def.work) { const s = seatWorld(f); const dd = Math.hypot(s.x - pos.x, s.z - pos.z); if (dd < bd) { bd = dd; best = f } }
-      if (best) { for (const o of agents.values()) if (o !== ag && o.pin?.station === best.id) o.pin = null; ag.pin = { station: best.id }; toast(`${ag.data.name} → ${best.def.label}`) }
-      else { ag.pin = { x: pos.x, z: pos.z }; toast(`${ag.data.name} resta qui`) }
-      sfx.place()
-      ag.char.state.hop = 0.25
-      if (selected?.kind === 'agent') updateCard()
+      ag.hold = { x: pos.x, z: pos.z } // stays where it was dropped until the move is confirmed
+      askConfirm(best ? 'Seat ' + ag.data.name + ' at ' + best.def.label + '?' : 'Leave ' + ag.data.name + ' here?', () => {
+        ag.hold = null
+        if (best) { for (const o of agents.values()) if (o !== ag && o.pin?.station === best.id) o.pin = null; ag.pin = { station: best.id }; toast(`${ag.data.name} → ${best.def.label}`) }
+        else { ag.pin = { x: pos.x, z: pos.z }; toast(`${ag.data.name} stays here`) }
+        sfx.place()
+        ag.char.state.hop = 0.25
+        if (selected?.kind === 'agent') updateCard()
+      }, () => { ag.hold = null })
     } else { select({ kind: 'agent', key: ag.key }); sfx.select(); const p = ag.char.root.position.clone(); p.y = 1.9; fx.burst('star', p, 6, 1.2, 0.26) }
   } else if (d.kind === 'pan' && !d.moved) {
-    if (selected) select(null)
+    const o = d.click
+    if (o?.kind === 'furn' && furn.get(o.id)) { select({ kind: 'furn', id: o.id }); furn.get(o.id).bounceT = 0; sfx.click() }
+    else if (o?.kind === 'agent' && agents.get(o.key)) {
+      const ag = agents.get(o.key)
+      select({ kind: 'agent', key: o.key }); sfx.select()
+      const p = ag.char.root.position.clone(); p.y = 1.9; fx.burst('star', p, 6, 1.2, 0.26)
+    } else if (selected) select(null)
   }
 }
 canvas.addEventListener('pointerup', endDrag)
@@ -801,25 +896,52 @@ canvas.addEventListener('wheel', (e) => {
 
 addEventListener('keydown', (e) => {
   const typing = e.target instanceof HTMLElement && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')
+  if (pendingAsk && e.key === 'Escape') { resolveAsk(false); return }
+  if (pendingAsk && e.key === 'Enter' && !typing) { resolveAsk(true); e.preventDefault(); return }
   if (e.key === 'Escape') { if (!$('catalog').hidden) toggleCatalog(false); else if (!$('spawn').hidden) toggleSpawn(false); else if (selected) select(null) }
   if (typing) return
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && CAM_KEYS[e.code]) { camKeys.add(CAM_KEYS[e.code]); e.preventDefault() }
   if ((e.key === 'Delete' || e.key === 'Backspace') && selected?.kind === 'furn') { removeSelected(); e.preventDefault() }
   if ((e.key === 'r' || e.key === 'R') && selected?.kind === 'furn') rotateSelected()
 })
 
+// ---- Move the view with WASD / arrow keys (relative to the camera direction) ----
+const CAM_KEYS = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' }
+const camKeys = new Set()
+addEventListener('keyup', (e) => { if (CAM_KEYS[e.code]) camKeys.delete(CAM_KEYS[e.code]) })
+addEventListener('blur', () => camKeys.clear())
+function moveCamera(dt) {
+  if (!camKeys.size) return
+  const fwd = (camKeys.has('f') ? 1 : 0) - (camKeys.has('b') ? 1 : 0)
+  const side = (camKeys.has('r') ? 1 : 0) - (camKeys.has('l') ? 1 : 0)
+  if (!fwd && !side) return
+  const len = Math.hypot(fwd, side)
+  const v = 11 * goal.zoom * dt / len
+  goal.target.x = clamp(goal.target.x + (Math.cos(cam.az) * side - Math.sin(cam.az) * fwd) * v, -9, 9)
+  goal.target.z = clamp(goal.target.z + (-Math.sin(cam.az) * side - Math.cos(cam.az) * fwd) * v, -6, 6)
+  manualCam = true
+}
+
+function needEdit() {
+  if (editMode) return false
+  toast('Turn on Edit mode (✏️) first')
+  return true
+}
 function rotateSelected() {
+  if (needEdit()) return
   if (selected?.kind !== 'furn') return
   const f = furn.get(selected.id)
   if (!f) return
   const tmp = { ...f.item, rot: (f.item.rot + Math.PI / 2) % (Math.PI * 2) }
   clampItem(tmp)
-  if (overlaps(tmp)) { toast('Non c\'è spazio per ruotarlo'); sfx.error(); return }
+  if (overlaps(tmp)) { toast('No room to rotate it'); sfx.error(); return }
   f.item.rot = tmp.rot; f.item.x = tmp.x; f.item.z = tmp.z
   f.trot = f.item.rot; f.tx = f.item.x; f.tz = f.item.z
   f.bounceT = 0
   sfx.click(); saveLayout()
 }
 function removeSelected() {
+  if (needEdit()) return
   if (selected?.kind !== 'furn') return
   const f = furn.get(selected.id)
   if (!f) return
@@ -836,16 +958,18 @@ function removeSelected() {
 $('rot').onclick = rotateSelected
 $('del').onclick = removeSelected
 $('reset').onclick = () => {
-  if (!confirm('Ripristinare le postazioni e l\'arredo di questo scenario?')) return
+  if (needEdit()) return
+  if (!confirm('Reset the stations and furniture of this scene?')) return
   delete layout.scenes[keyOf(sceneName)]
   select(null)
   populate(true)
   sfx.place(); saveLayout()
-  toast('Scenario ripristinato')
+  toast('Scene reset')
 }
 
-// ---------- Aggiunta mobili ----------
+// ---------- Adding furniture ----------
 function addFurniture(type) {
+  if (needEdit()) return
   const def = CATALOG[type]
   const list = items()
   const base = { id: sceneName + '-' + Date.now().toString(36) + Math.floor(Math.random() * 99), type, x: 0, z: 0, rot: def.work ? Math.PI : 0 }
@@ -857,16 +981,16 @@ function addFurniture(type) {
     clampItem(tmp)
     if (!overlaps(tmp)) { spot = tmp; break outer }
   }
-  if (!spot) { toast('Non c\'è più posto in questa stanza'); sfx.error(); return }
+  if (!spot) { toast('No more room in this location'); sfx.error(); return }
   list.push(spot)
   const f = spawnFurniture(spot, 0)
-  if (f) { f.group.position.set(spot.x, 2.5, spot.z) } // cade dall'alto
+  if (f) { f.group.position.set(spot.x, 2.5, spot.z) } // drops from above
   select({ kind: 'furn', id: spot.id })
   sfx.place(); saveLayout()
-  toast(`${def.label} aggiunto`)
+  toast(`${def.label} added`)
 }
 
-// ---------- Catalogo con anteprime 3D ----------
+// ---------- Catalog with 3D previews ----------
 const previews = new Map()
 let previewsStarted = false
 function renderPreviews() {
@@ -938,8 +1062,8 @@ function toggleCatalog(open) {
 $('add-btn').onclick = () => toggleCatalog()
 $('cat-close').onclick = () => toggleCatalog(false)
 
-// ---------- Scelta del personaggio per un nuovo agente ----------
-const spawnLook = { species: null, shirt: null } // null = casuale
+// ---------- Character choice for a new agent ----------
+const spawnLook = { species: null, shirt: null } // null = random
 let lookThumbs = new Map()
 let lookBuilt = false
 function makeThumbs(shirtIdx) {
@@ -969,7 +1093,7 @@ function makeThumbs(shirtIdx) {
 }
 function renderLookUI() {
   const box = $('sp-species')
-  const opts = [{ id: null, label: 'Casuale' }, ...SPECIES_IDS.map((id) => ({ id, label: SPECIES[id].label }))]
+  const opts = [{ id: null, label: 'Random' }, ...SPECIES_IDS.map((id) => ({ id, label: SPECIES[id].label }))]
   box.replaceChildren(...opts.map((o) => {
     const b = document.createElement('button')
     b.type = 'button'
@@ -990,10 +1114,10 @@ function renderLookUI() {
     d.className = 'dot'
     d.style.background = hex
     d.title = OUTFITS[i].name
-    d.setAttribute('aria-label', 'Divisa: ' + OUTFITS[i].name)
+    d.setAttribute('aria-label', 'Uniform: ' + OUTFITS[i].name)
     d.setAttribute('aria-pressed', String(spawnLook.shirt === i))
     d.onclick = () => {
-      spawnLook.shirt = spawnLook.shirt === i ? null : i // un secondo clic torna a "casuale"
+      spawnLook.shirt = spawnLook.shirt === i ? null : i // a second click goes back to "random"
       sfx.click()
       lookThumbs = makeThumbs(spawnLook.shirt ?? 0)
       renderLookUI()
@@ -1004,21 +1128,21 @@ function renderLookUI() {
 function buildLookUI() {
   if (lookBuilt) return
   lookBuilt = true
-  renderLookUI() // subito, con segnaposto
+  renderLookUI() // right away, with placeholders
   setTimeout(() => { lookThumbs = makeThumbs(spawnLook.shirt ?? 0); renderLookUI() }, 30)
 }
 
-// ---------- Nuovo agente (apre un terminale con la mod) ----------
+// ---------- New agent (opens a terminal with the mod) ----------
 async function loadDirs(p) {
   const box = $('sp-dirs')
-  if (!TOKEN) { box.replaceChildren(Object.assign(document.createElement('div'), { className: 'none', textContent: 'Apri la finestra con /vibeship per avviare nuovi agenti.' })); return }
+  if (!TOKEN) { box.replaceChildren(Object.assign(document.createElement('div'), { className: 'none', textContent: 'Open the window with /vibeship to launch new agents.' })); return }
   try {
     const r = await fetch('/api/dirs?path=' + encodeURIComponent(p), { headers: { 'x-token': TOKEN } })
-    if (r.status === 401) { toast('Finestra non più autorizzata: chiudila e rilancia /vibeship'); return }
+    if (r.status === 401) { toast('Window no longer authorized: close it and run /vibeship again'); return }
     const d = await r.json()
-    if (!r.ok) { toast(d.error || 'Cartella non leggibile'); return }
+    if (!r.ok) { toast(d.error || 'Folder not readable'); return }
     renderDirs(d)
-  } catch { toast('Server non raggiungibile') }
+  } catch { toast('Server unreachable') }
 }
 function dirButton(label, path) {
   const b = document.createElement('button')
@@ -1032,9 +1156,9 @@ function renderDirs(d) {
   $('sp-path').value = d.path
   const box = $('sp-dirs')
   const items = []
-  if (d.parent !== null) items.push(dirButton('⬆️  Cartella superiore', d.parent))
+  if (d.parent !== null) items.push(dirButton('⬆️  Parent folder', d.parent))
   for (const x of d.dirs) items.push(dirButton('📁  ' + x.name, x.path))
-  if (!d.dirs.length) items.push(Object.assign(document.createElement('div'), { className: 'none', textContent: 'Nessuna sottocartella.' }))
+  if (!d.dirs.length) items.push(Object.assign(document.createElement('div'), { className: 'none', textContent: 'No subfolders.' }))
   box.replaceChildren(...items)
   const rec = $('sp-recent')
   rec.replaceChildren(...(d.recent ?? []).map((p) => {
@@ -1061,7 +1185,7 @@ function renderLocUI() {
     return b
   }))
 }
-// Nuovo progetto: crea una cartella nuova dentro quella che sto guardando e la seleziona
+// New project: creates a new folder inside the one being viewed and selects it
 function toggleNewProject(open) {
   const f = $('np-form')
   const willOpen = open ?? f.hidden
@@ -1074,24 +1198,111 @@ $('np-form').onsubmit = async (ev) => {
   ev.preventDefault()
   const name = $('np-name').value.trim()
   const parent = $('sp-path').value.trim()
-  if (!name) { toast('Scrivi il nome del progetto'); return }
-  if (!parent) { toast('Scegli prima la cartella dove crearlo'); return }
-  if (!TOKEN) { toast('Apri la finestra con /vibeship per creare cartelle'); return }
+  if (!name) { toast('Enter the project name'); return }
+  if (!parent) { toast('First choose the folder to create it in'); return }
+  if (!TOKEN) { toast('Open the window with /vibeship to create folders'); return }
   try {
     const r = await fetch('/api/mkdir', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ parent, name, git: $('np-git').checked }) })
     const d = await r.json().catch(() => ({}))
-    if (r.status === 401) toast('Finestra non più autorizzata: chiudila e rilancia /vibeship')
-    else if (!r.ok) { toast(d.error || 'Non sono riuscito a creare la cartella'); sfx.error() }
+    if (r.status === 401) toast('Window no longer authorized: close it and run /vibeship again')
+    else if (!r.ok) { toast(d.error || 'Could not create the folder'); sfx.error() }
     else {
       sfx.place()
-      toast('📁 Creato ' + name + (d.git ? ' (con git)' : ''))
+      toast('📁 Created ' + name + (d.git ? ' (with git)' : ''))
       $('np-name').value = ''
       toggleNewProject(false)
       if (!$('sp-name').value.trim()) $('sp-name').placeholder = name
       loadDirs(d.path)
     }
-  } catch { toast('Server non raggiungibile') }
+  } catch { toast('Server unreachable') }
 }
+// ---- Statistics ----
+let statsDays = 14
+const fmtN = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n))
+const statsEl = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e }
+function statsRows(items, label, value, max) {
+  const box = statsEl('div', 'rows')
+  if (!items.length) return statsEl('div', 'none', 'No data in this period.')
+  for (const it of items) {
+    const r = statsEl('div', 'r')
+    r.append(statsEl('span', 'n', label(it)), statsEl('span', 'v', value(it)))
+    const m = statsEl('div', 'm'), i = statsEl('i')
+    i.style.width = Math.max(2, Math.round((100 * it._v) / max)) + '%'
+    m.append(i)
+    r.append(m)
+    box.append(r)
+  }
+  return box
+}
+function renderStats(s) {
+  const body = $('st-body')
+  const kpi = (v, l, sub) => { const k = statsEl('div', 'kpi'); k.append(statsEl('b', '', v), statsEl('span', '', l)); if (sub) k.append(statsEl('small', '', sub)); return k }
+  const kp = statsEl('div', 'kpis')
+  kp.append(
+    kpi(fmtN(s.range.input + s.range.output), 'tokens (' + s.days + ' d)', 'in ' + fmtN(s.range.input) + ' · out ' + fmtN(s.range.output)),
+    kpi(fmtN(s.today.input + s.today.output), 'tokens today', 'in ' + fmtN(s.today.input) + ' · out ' + fmtN(s.today.output)),
+    kpi(String(s.range.sessions), 'sessions (' + s.days + ' d)', s.total.sessions + ' in total'),
+    kpi(fmtN(s.range.messages), 'replies', fmtN(s.range.tools) + ' tools used'),
+    kpi(fmtN(s.range.cacheRead), 'cache read', 'written ' + fmtN(s.range.cacheWrite)),
+    kpi(s.live.agents + (s.live.subagents ? ' + ' + s.live.subagents : ''), 'active agents', s.live.subagents ? 'plus subagents' : ''),
+  )
+  const peak = Math.max(1, ...s.series.map((d) => d.input + d.output))
+  const bars = statsEl('div', 'bars')
+  for (const d of s.series) {
+    const col = statsEl('div', 'col')
+    col.title = d.day + ': in ' + fmtN(d.input) + ' · out ' + fmtN(d.output) + ' · ' + d.sessions + ' sessions'
+    const inp = statsEl('div', 'inp'), out = statsEl('div', 'out')
+    inp.style.height = (100 * d.input) / peak + '%'
+    out.style.height = (100 * d.output) / peak + '%'
+    col.append(out, inp)
+    bars.append(col)
+  }
+  const legend = statsEl('div', 'legend')
+  const lg = (c, t) => { const s2 = statsEl('span'); const i = statsEl('i'); i.style.background = c; s2.append(i, t); return s2 }
+  legend.append(lg('var(--leaf)', 'tokens in'), lg('var(--berry)', 'tokens out'))
+  const withV = (items, f) => { items.forEach((x) => (x._v = f(x))); return items }
+  const tok = (x) => x.input + x.output
+  const proj = withV(s.projects, tok), mod = withV(s.models, tok), tl = withV(s.tools, (x) => x.count)
+  body.replaceChildren(
+    kp,
+    statsEl('h3', '', 'Tokens per day'), bars, legend,
+    statsEl('h3', '', 'Projects'), statsRows(proj, (x) => x.name, (x) => fmtN(tok(x)) + ' · ' + x.sessions + ' sess.', Math.max(1, ...proj.map((x) => x._v))),
+    statsEl('h3', '', 'Models'), statsRows(mod, (x) => x.name, (x) => fmtN(tok(x)) + ' · ' + x.messages + ' replies', Math.max(1, ...mod.map((x) => x._v))),
+    statsEl('h3', '', 'Most used tools'), statsRows(tl, (x) => x.name, (x) => String(x.count), Math.max(1, ...tl.map((x) => x._v))),
+  )
+}
+async function loadStats() {
+  const body = $('st-body')
+  if (!TOKEN) { body.replaceChildren(statsEl('div', 'none', 'Open the window with /vibeship to see the statistics.')); return }
+  try {
+    const r = await fetch('/api/stats?days=' + statsDays, { headers: { 'x-token': TOKEN } })
+    if (!r.ok) throw new Error()
+    renderStats(await r.json())
+  } catch { body.replaceChildren(statsEl('div', 'none', 'Statistics not available.')) }
+}
+function toggleStats(open) {
+  const el = $('stats')
+  const willOpen = open ?? el.hidden
+  el.hidden = !willOpen
+  $('stats-btn').setAttribute('aria-expanded', String(willOpen))
+  if (willOpen) { toggleCatalog(false); toggleSpawn(false); sfx.click(); loadStats() }
+}
+$('stats-btn').onclick = () => toggleStats()
+// any other button in the top bar closes the statistics panel
+document.querySelector('header').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (b && b.id !== 'stats-btn') toggleStats(false)
+})
+$('st-close').onclick = () => toggleStats(false)
+$('st-range').onclick = (e) => {
+  const b = e.target.closest('button[data-days]')
+  if (!b) return
+  statsDays = Number(b.dataset.days)
+  for (const x of $('st-range').children) x.setAttribute('aria-pressed', String(x === b))
+  loadStats()
+}
+setInterval(() => { if (!$('stats').hidden) loadStats() }, 15000)
+
 let spawnLoaded = false
 function toggleSpawn(open) {
   const el = $('spawn')
@@ -1100,6 +1311,7 @@ function toggleSpawn(open) {
   $('agent-btn').setAttribute('aria-expanded', String(willOpen))
   if (willOpen) {
     toggleCatalog(false)
+    toggleStats(false)
     sfx.click()
     buildLookUI()
     spawnLoc = sceneName
@@ -1108,25 +1320,34 @@ function toggleSpawn(open) {
     $('sp-name').focus({ preventScroll: true })
   }
 }
-$('agent-btn').onclick = () => toggleSpawn()
-$('sp-close').onclick = () => toggleSpawn(false)
+// "Add an agent at this station": the next new agent that arrives sits at the selected station
+let pendingSeat = null // { id, scene, until }
+$('agent-btn').onclick = () => { pendingSeat = null; toggleSpawn() }
+$('sp-close').onclick = () => { pendingSeat = null; toggleSpawn(false) }
+$('seat-add').onclick = () => {
+  const f = selected?.kind === 'furn' ? furn.get(selected.id) : null
+  if (!f || !f.def.work) return
+  pendingSeat = { id: f.id, scene: sceneName, until: 0 }
+  toggleSpawn(true)
+  toast('Choose character and folder: the new agent will sit at this station')
+}
 $('sp-form').onsubmit = (e) => { e.preventDefault(); loadDirs($('sp-path').value.trim()) }
 $('sp-go').onclick = async () => {
   const cwd = $('sp-path').value.trim()
-  if (!cwd) { toast('Scegli una cartella'); return }
-  if (!TOKEN) { toast('Apri la finestra con /vibeship per avviare nuovi agenti'); return }
+  if (!cwd) { toast('Choose a folder'); return }
+  if (!TOKEN) { toast('Open the window with /vibeship to launch new agents'); return }
   $('sp-go').disabled = true
   try {
     const r = await fetch('/api/spawn', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ cwd, name: $('sp-name').value.trim(), species: spawnLook.species, shirt: spawnLook.shirt, loc: spawnLoc ?? sceneName }) })
     const d = await r.json().catch(() => ({}))
-    if (r.status === 401) toast('Finestra non più autorizzata: chiudila e rilancia /vibeship')
-    else if (!r.ok) toast(d.error || 'Non sono riuscito ad avviarlo')
-    else { sfx.place(); toast('🚀 Sto aprendo un nuovo terminale: l\'abitante arriva tra pochi secondi'); $('sp-name').value = ''; toggleSpawn(false) }
-  } catch { toast('Server non raggiungibile') }
+    if (r.status === 401) toast('Window no longer authorized: close it and run /vibeship again')
+    else if (!r.ok) toast(d.error || 'Could not launch it')
+    else { if (pendingSeat) pendingSeat.until = performance.now() + 120000; sfx.place(); toast('🚀 Opening a new terminal: the resident arrives in a few seconds'); $('sp-name').value = ''; toggleSpawn(false) }
+  } catch { toast('Server unreachable') }
   $('sp-go').disabled = false
 }
 
-// ---------- Scenari ----------
+// ---------- Scenes ----------
 function buildSceneButtons() {
   const wrap = $('scenes')
   wrap.innerHTML = ''
@@ -1140,7 +1361,7 @@ function buildSceneButtons() {
   }
   updateSceneButtons()
 }
-// Aggiorna quale luogo è aperto e quanti agenti ci sono in ciascuno (con 🔔 se qualcuno aspetta un permesso)
+// Updates which location is open and how many agents are in each (with 🔔 if someone is waiting for a permission)
 function updateSceneButtons() {
   const mains = agentData.filter((a) => a.kind === 'main')
   for (const b of document.querySelectorAll('#scenes .btn')) {
@@ -1152,7 +1373,7 @@ function updateSceneButtons() {
     badge.hidden = here.length === 0
     badge.textContent = (asking ? '🔔' : '') + here.length
     badge.classList.toggle('ring', asking)
-    b.title = here.length ? here.map((a) => a.name).join(', ') : 'Nessun agente qui'
+    b.title = here.length ? here.map((a) => a.name).join(', ') : 'No agents here'
   }
 }
 let switching = false
@@ -1176,17 +1397,51 @@ function switchScene(name, save) {
   }, 260)
 }
 
-// ---------- Luci della nave e suoni ----------
+// ---------- Ship lights and sounds ----------
 function updateTodButton() {
   $('tod').querySelector('.ic').textContent = TOD_ICON[world.tod]
-  $('tod').setAttribute('data-tip', 'Luci: ' + TOD_LABEL[world.tod])
+  $('tod').setAttribute('data-tip', 'Lights: ' + TOD_LABEL[world.tod])
 }
-$('tod').onclick = () => { world.cycleTOD(); updateTodButton(); sfx.click(); toast('Luci: ' + TOD_LABEL[world.tod]) }
+$('tod').onclick = () => { world.cycleTOD(); updateTodButton(); sfx.click(); toast('Lights: ' + TOD_LABEL[world.tod]) }
 function updateSnd() {
   $('snd').querySelector('.ic').textContent = isMuted() ? '🔇' : '🔊'
   $('snd').setAttribute('aria-pressed', String(!isMuted()))
 }
 $('snd').onclick = () => { setMuted(!isMuted()); updateSnd() }
+
+// ---------- Confirm bar: moves are applied only after the user confirms ----------
+let pendingAsk = null // { yes, no }
+function askConfirm(text, yes, no) {
+  if (editMode) { yes?.(); return } // in edit mode moves apply right away
+  if (pendingAsk) resolveAsk(false)
+  pendingAsk = { yes, no }
+  $('ask-text').textContent = text
+  $('askbar').hidden = false
+  $('ask-yes').focus({ preventScroll: true })
+}
+function resolveAsk(ok) {
+  const p = pendingAsk
+  if (!p) return
+  pendingAsk = null
+  $('askbar').hidden = true
+  if (ok) p.yes?.(); else p.no?.()
+}
+$('ask-yes').onclick = () => resolveAsk(true)
+$('ask-no').onclick = () => resolveAsk(false)
+
+// ---------- Edit mode ----------
+function setEditMode(on, quiet) {
+  editMode = on
+  $('edit-btn').setAttribute('aria-pressed', String(on))
+  $('add-btn').disabled = !on
+  $('reset').disabled = !on
+  const f = selected?.kind === 'furn'
+  $('rot').disabled = !f || !on
+  $('del').disabled = !f || !on
+  if (!on) { toggleCatalog(false); resolveAsk(false); ghost.visible = false }
+  if (!quiet) { sfx.click(); toast(on ? 'Edit mode on: drag furniture and agents, add or remove furniture' : 'Edit mode off: nothing can be moved by accident') }
+}
+$('edit-btn').onclick = () => setEditMode(!editMode)
 
 // ---------- Toast ----------
 let toastTimer = null
@@ -1198,13 +1453,18 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('on'), 2400)
 }
 
-// ---------- Scheda agente (chat / stop) ----------
+// ---------- Agent card (chat / stop) ----------
 const qs = new URLSearchParams(location.search)
 let TOKEN = qs.get('t') || ''
 try { if (TOKEN) sessionStorage.setItem('ao-token', TOKEN); else TOKEN = sessionStorage.getItem('ao-token') || '' } catch {}
 if (qs.has('t')) history.replaceState(null, '', location.pathname)
 
-function openCard(key) { $('card').hidden = false; updateCard(true) }
+function openCard(key) {
+  $('card').hidden = false
+  updateCard(true)
+  const a = agents.get(key)
+  if (a?.data.kind === 'main') loadCmds(a.data.session)
+}
 function closeCard() { $('card').hidden = true }
 function updateCard(focus) {
   const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
@@ -1212,7 +1472,7 @@ function updateCard(focus) {
   const a = ag.data
   const st = STATUS[a.status] ?? STATUS.idle
   $('card-name').textContent = a.name
-  $('card-sp').textContent = (SPECIES[ag.species]?.label ?? '') + ' · ' + (ag.char.outfit?.name ?? '') + (a.kind === 'main' ? ' · assistente principale' : ' · subagente')
+  $('card-sp').textContent = (SPECIES[ag.species]?.label ?? '') + ' · ' + (ag.char.outfit?.name ?? '') + (a.kind === 'main' ? ' · main assistant' : ' · subagent')
   $('card-ic').textContent = st.icon
   $('card-st').textContent = st.text + (a.detail ? ' · ' + a.detail : '')
   const isMain = a.kind === 'main'
@@ -1220,8 +1480,8 @@ function updateCard(focus) {
   $('card-stop').style.display = isMain ? '' : 'none'
   $('card-end').style.display = isMain ? '' : 'none'
   $('card-note').textContent = isMain
-    ? (TOKEN ? 'Qui vedi la conversazione: i tuoi messaggi arrivano a Claude come se li scrivessi nel terminale.' : 'Apri questa finestra con /vibeship per abilitare chat e stop.')
-    : 'I subagenti non ricevono messaggi: parla con Claude, che li coordina.'
+    ? (TOKEN ? 'Here you see the conversation: your messages reach Claude as if you typed them in the terminal. Commands starting with / (like /model) work too.' : 'Open this window with /vibeship to enable chat and stop.')
+    : 'Subagents do not receive messages: talk to Claude, who coordinates them.'
   $('card-move').replaceChildren(...SCENES.map((s) => {
     const b = document.createElement('button')
     b.type = 'button'
@@ -1237,29 +1497,29 @@ function updateCard(focus) {
 async function sendCommand(kind, text) {
   const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
   if (!ag) return
-  if (!TOKEN) { toast('Apri la finestra con /vibeship per inviare comandi'); return }
+  if (!TOKEN) { toast('Open the window with /vibeship to send commands'); return }
   try {
     const r = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: ag.data.session, kind, text }) })
-    if (r.status === 401) toast('Finestra non più autorizzata: chiudila e rilancia /vibeship')
-    else if (!r.ok) toast('Comando non valido')
-    else { toast(kind === 'say' ? 'Messaggio inviato ✉️' : kind === 'close' ? 'Chiudo l\'agente…' : 'Stop inviato ✋'); ag.char.state.hop = 0.3; sfx.click() }
-  } catch { toast('Server non raggiungibile') }
+    if (r.status === 401) toast('Window no longer authorized: close it and run /vibeship again')
+    else if (!r.ok) toast('Invalid command')
+    else { toast(kind === 'say' ? 'Message sent ✉️' : kind === 'close' ? 'Closing the agent…' : 'Stop sent ✋'); ag.char.state.hop = 0.3; sfx.click() }
+  } catch { toast('Server unreachable') }
 }
 async function sendMove(ag, loc) {
-  if (!TOKEN) { toast('Apri la finestra con /vibeship per spostare gli agenti'); return }
+  if (!TOKEN) { toast('Open the window with /vibeship to move agents'); return }
   try {
     const r = await fetch('/api/move', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: ag.data.session, loc }) })
-    if (r.status === 401) toast('Finestra non più autorizzata: chiudila e rilancia /vibeship')
-    else if (!r.ok) toast('Non riesco a spostarlo')
+    if (r.status === 401) toast('Window no longer authorized: close it and run /vibeship again')
+    else if (!r.ok) toast('Cannot move it')
     else { sfx.place(); toast(ag.data.name + ' → ' + LOC_LABEL[loc]) }
-  } catch { toast('Server non raggiungibile') }
+  } catch { toast('Server unreachable') }
 }
 $('card-close').onclick = () => select(null)
 $('card-stop').onclick = () => sendCommand('stop')
 $('card-end').onclick = () => {
   const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
   if (!ag) return
-  if (!confirm('Chiudere ' + ag.data.name + '?\nLa sessione di Claude Code verrà terminata e il lavoro in corso si interrompe.')) return
+  if (!confirm('Close ' + ag.data.name + '?\nThe Claude Code session will be terminated and any work in progress will stop.')) return
   sendCommand('close')
 }
 $('card-form').onsubmit = (ev) => {
@@ -1267,17 +1527,99 @@ $('card-form').onsubmit = (ev) => {
   const inp = $('card-text')
   const text = inp.value.trim()
   if (!text) return
+  if (/^\/model\s*$/i.test(text)) { inp.value = ''; showModelPicker(); return } // the terminal selector cannot be shown here: pick in the window instead
   sendCommand('say', text)
   inp.value = ''
+  $('cmdlist').hidden = true
 }
 
-// ---------- Conversazione, risposte e permessi ----------
+// Model chooser: /model on its own opens a selector in the terminal, so the window offers its own
+const MODEL_CHOICES = [
+  ['opus', 'Opus 5.5', 'Complex work and everyday tasks'],
+  ['sonnet', 'Sonnet 5.5', 'Most efficient for simpler tasks'],
+  ['haiku', 'Haiku 4.5', 'Fastest, for quick tasks'],
+  ['fable', 'Fable 5.1', 'Most capable'],
+]
+function showModelPicker() {
+  const box = $('cmdlist')
+  box._hits = null
+  const head = document.createElement('div')
+  head.textContent = 'Switch model for this session'
+  head.style.cssText = 'font-size:11.5px;color:var(--muted);padding:2px 9px 4px'
+  box.replaceChildren(head, ...MODEL_CHOICES.map(([id, label, desc]) => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    const n = document.createElement('b'); n.textContent = label
+    const d = document.createElement('span'); d.textContent = desc
+    b.append(n, d)
+    b.onmousedown = (e) => { e.preventDefault(); box.hidden = true; sendCommand('say', '/model ' + id) }
+    return b
+  }))
+  box.hidden = false
+}
+
+// ---- Slash commands in the chat: suggestions from the session's command list ----
+let cmdList = []
+let cmdSel = 0
+async function loadCmds(session) {
+  if (!TOKEN) return
+  const get = async () => {
+    try {
+      const r = await fetch('/api/commands?session=' + encodeURIComponent(session), { headers: { 'x-token': TOKEN } })
+      if (r.ok) cmdList = (await r.json()).commands || []
+    } catch {}
+  }
+  await get()
+  try { await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session, kind: 'commands' }) }) } catch {}
+  setTimeout(get, 1500) // the mod refreshes the list on its next poll
+}
+function pickCmd(name) {
+  const inp = $('card-text')
+  inp.value = '/' + name + ' '
+  $('cmdlist').hidden = true
+  inp.focus()
+}
+function renderCmds() {
+  const box = $('cmdlist')
+  const m = /^\/([\w:.-]*)$/.exec($('card-text').value)
+  if (!m) { box.hidden = true; box._hits = null; return }
+  const q = m[1].toLowerCase()
+  const rank = (c) => (c.name.toLowerCase().startsWith(q) ? 0 : 1)
+  const hits = cmdList.filter((c) => c.name.toLowerCase().includes(q)).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)).slice(0, 30)
+  if (!hits.length) { box.hidden = true; box._hits = null; return }
+  cmdSel = Math.min(cmdSel, hits.length - 1)
+  box._hits = hits
+  box.replaceChildren(...hits.map((c, i) => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.setAttribute('role', 'option')
+    b.setAttribute('aria-selected', String(i === cmdSel))
+    const n = document.createElement('b'); n.textContent = '/' + c.name
+    const d = document.createElement('span'); d.textContent = c.description
+    b.append(n, d)
+    b.onmousedown = (e) => { e.preventDefault(); pickCmd(c.name) }
+    return b
+  }))
+  box.hidden = false
+  box.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+}
+$('card-text').addEventListener('input', () => { cmdSel = 0; renderCmds() })
+$('card-text').addEventListener('keydown', (e) => {
+  const box = $('cmdlist')
+  if (box.hidden || !box._hits) return
+  const typed = $('card-text').value.slice(1)
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { cmdSel = (cmdSel + (e.key === 'ArrowDown' ? 1 : -1) + box._hits.length) % box._hits.length; renderCmds(); e.preventDefault() }
+  else if (e.key === 'Tab' || (e.key === 'Enter' && !box._hits.some((c) => c.name === typed))) { pickCmd(box._hits[cmdSel].name); e.preventDefault() }
+  else if (e.key === 'Escape') { box.hidden = true; e.stopPropagation() }
+})
+
+// ---------- Conversation, replies and permissions ----------
 let chatData = {}
 let permsData = []
-const seenAssistant = new Map() // sessione -> id dell'ultima risposta già vista
-const msgStates = new Map() // id messaggio -> ultimo stato visto
+const seenAssistant = new Map() // session -> id of the last reply already seen
+const msgStates = new Map() // message id -> last state seen
 let chatInit = false
-const STATE_LABEL = { queued: '⏳ in coda', sent: '✉️ consegnato a Claude', working: '💭 Claude ci sta lavorando', done: '✓ completato', aborted: '✋ interrotto', error: '⚠️ non riuscito' }
+const STATE_LABEL = { queued: '⏳ queued', sent: '✉️ delivered to Claude', working: '💭 Claude is working on it', done: '✓ completed', aborted: '✋ interrupted', error: '⚠️ failed' }
 const mainAgentOf = (session) => agents.get(session + ':main')
 function say(ag, text, ms = 9000, small = false) { ag.say = { text, until: performance.now() + ms, small } }
 
@@ -1290,10 +1632,10 @@ function onChat(data) {
       if (msgStates.get(m.id) === m.state) continue
       msgStates.set(m.id, m.state)
       if (!chatInit || !ag || m.via !== 'window') continue
-      // feedback visivo nel mondo 3D mentre il messaggio avanza
-      if (m.state === 'sent') { say(ag, 'Ricevuto! 📨', 2600, true); ag.char.state.hop = 0.25; sfx.select() }
-      else if (m.state === 'working') say(ag, 'Ci lavoro subito…', 2600, true)
-      else if (m.state === 'error') { say(ag, 'Non ci sono riuscito 😿', 4000, true); sfx.error() }
+      // visual feedback in the 3D world as the message progresses
+      if (m.state === 'sent') { say(ag, 'Got it! 📨', 2600, true); ag.char.state.hop = 0.25; sfx.select() }
+      else if (m.state === 'working') say(ag, 'On it…', 2600, true)
+      else if (m.state === 'error') { say(ag, 'I could not do it 😿', 4000, true); sfx.error() }
     }
     const lastA = [...list].reverse().find((m) => m.role === 'assistant')
     if (lastA && seenAssistant.get(session) !== lastA.id) {
@@ -1302,7 +1644,7 @@ function onChat(data) {
         say(ag, lastA.text.length > 140 ? lastA.text.slice(0, 137) + '…' : lastA.text, 11000)
         ag.char.state.hop = 0.25
         sfx.done()
-        if (!(selected?.kind === 'agent' && selected.key === ag.key)) toast('💬 ' + ag.data.name + (ag.loc !== sceneName ? ' (' + (LOC_LABEL[ag.loc] ?? '') + ')' : '') + ' ha risposto')
+        if (!(selected?.kind === 'agent' && selected.key === ag.key)) toast('💬 ' + ag.data.name + (ag.loc !== sceneName ? ' (' + (LOC_LABEL[ag.loc] ?? '') + ')' : '') + ' replied')
       }
     }
   }
@@ -1329,10 +1671,10 @@ function renderChat(force) {
     d.appendChild(t)
     const sm = document.createElement('small')
     if (m.role === 'user') {
-      sm.textContent = (m.via === 'terminal' ? '🖥️ dal terminale · ' : '') + (STATE_LABEL[m.state] ?? '')
+      sm.textContent = (m.via === 'terminal' ? '🖥️ from the terminal · ' : '') + (STATE_LABEL[m.state] ?? '')
       if (m.state === 'queued' || m.state === 'working') sm.classList.add('dots')
     } else {
-      const when = new Date(m.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+      const when = new Date(m.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
       sm.textContent = '🐾 ' + ag.data.name + ' · ' + when
     }
     d.appendChild(sm)
@@ -1345,13 +1687,13 @@ const permEls = new Map()
 function onPerms(list) {
   const known = new Set(permsData.map((p) => p.id))
   permsData = list
-  world.setAlert(list.some((p) => !p.decision)) // la nave va in allerta mentre un agente aspetta
+  world.setAlert(list.some((p) => !p.decision)) // the ship goes on alert while an agent is waiting
   setTimeout(updateSceneButtons, 0)
   for (const p of list) {
     if (known.has(p.id) || p.decision) continue
     sfx.error()
     const ag = mainAgentOf(p.session)
-    if (ag) say(ag, 'Posso? 🔔', 5000, true)
+    if (ag) say(ag, 'May I? 🔔', 5000, true)
   }
   renderPerms()
 }
@@ -1360,11 +1702,14 @@ function buildPerm(p) {
   el.className = 'ask'
   el.setAttribute('role', 'alertdialog')
   const ag = mainAgentOf(p.session)
-  el.innerHTML = '<h3><span class="bell">🔔</span><span class="ttl"></span></h3><code></code><div class="why"></div><div class="row"><button class="btn ok" data-d="allow">✓ Consenti</button><button class="btn danger" data-d="deny">✕ Nega</button></div><div class="bar"></div>'
-  el.querySelector('.ttl').textContent = (ag?.data.name ?? 'Claude') + (ag ? ' (' + (LOC_LABEL[ag.loc] ?? '') + ')' : '') + ' vuole usare ' + p.tool
-  el.querySelector('code').textContent = p.summary || '(nessun dettaglio)'
+  el.innerHTML = '<h3><span class="bell">🔔</span><span class="ttl"></span></h3><code></code><div class="why"></div><div class="row"><button class="btn ok" data-d="allow">✓ Allow</button><button class="btn ok" data-d="allow_session" title="Stop asking about this tool until the session ends" hidden>✓ Allow all session</button><button class="btn danger" data-d="deny">✕ Deny</button></div><div class="bar"></div>'
+  // a blanket allow is offered only for tools that cannot run commands or change files
+  const RISKY = /^(Bash|PowerShell|Write|Edit|NotebookEdit|mcp__)/
+  if (!RISKY.test(p.tool)) el.querySelector('[data-d="allow_session"]').hidden = false
+  el.querySelector('.ttl').textContent = (ag?.data.name ?? 'Claude') + (ag ? ' (' + (LOC_LABEL[ag.loc] ?? '') + ')' : '') + ' wants to use ' + p.tool
+  el.querySelector('code').textContent = p.summary || '(no details)'
   const why = p.reason ? (p.reason.length > 100 ? p.reason.slice(0, 99) + '…' : p.reason) + ' · ' : ''
-  el.querySelector('.why').textContent = why + 'Senza risposta entro 30 secondi, la domanda passa al terminale.'
+  el.querySelector('.why').textContent = why + 'With no answer within 30 seconds, the question moves to the terminal.'
   el.querySelectorAll('button').forEach((b) => { b.onclick = () => answerPerm(p.id, b.dataset.d) })
   const bar = el.querySelector('.bar')
   const elapsed = Math.max(0, (Date.now() - p.ts) / 1000)
@@ -1385,20 +1730,20 @@ function renderPerms() {
       row.textContent = ''
       const r = document.createElement('span')
       r.className = 'res'
-      r.textContent = p.decision === 'allow' ? '✓ Consentito' : '✕ Negato'
+      r.textContent = String(p.decision).startsWith('allow') ? (p.decision === 'allow_session' ? '✓ Allowed for this session' : '✓ Allowed') : '✕ Denied'
       row.appendChild(r)
       el.querySelector('.bar')?.remove()
     }
   }
 }
 async function answerPerm(id, decision) {
-  if (!TOKEN) { toast('Apri la finestra con /vibeship per rispondere'); return }
+  if (!TOKEN) { toast('Open the window with /vibeship to answer'); return }
   try {
     const r = await fetch('/api/permission', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ id, decision }) })
-    if (r.status === 401) toast('Finestra non più autorizzata: chiudila e rilancia /vibeship')
-    else if (!r.ok) toast('La richiesta non c\'è più (risposta già data o scaduta)')
-    else sfx[decision === 'allow' ? 'place' : 'remove']()
-  } catch { toast('Server non raggiungibile') }
+    if (r.status === 401) toast('Window no longer authorized: close it and run /vibeship again')
+    else if (!r.ok) toast('The request is gone (already answered or expired)')
+    else sfx[decision.startsWith('allow') ? 'place' : 'remove']()
+  } catch { toast('Server unreachable') }
 }
 
 // ---------- Server ----------
@@ -1415,13 +1760,13 @@ function loadLocalLayout() {
 function saveLayout() {
   clearTimeout(saveTimer)
   savePending = true
-  // copia di riserva nel browser: funziona anche senza token
+  // backup copy in the browser: works even without a token
   try {
     const mine = {}
     for (const k of Object.keys(layout.scenes)) if (k.endsWith('@3')) mine[k] = layout.scenes[k]
     localStorage.setItem(LS_KEY, JSON.stringify(mine))
   } catch {}
-  if (!TOKEN && !warnedNoToken) { warnedNoToken = true; toast('Salvato solo in questo browser: apri la finestra con /vibeship per condividerlo') }
+  if (!TOKEN && !warnedNoToken) { warnedNoToken = true; toast('Saved only in this browser: open the window with /vibeship to share it') }
   saveTimer = setTimeout(() => {
     fetch('/api/layout', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify(layout) })
       .catch(() => {})
@@ -1431,8 +1776,8 @@ function saveLayout() {
 const conn = $('conn')
 function connect() {
   const es = new EventSource('/stream')
-  es.onopen = () => { conn.className = 'pill ok'; conn.textContent = 'collegato' }
-  es.onerror = () => { conn.className = 'pill'; conn.textContent = 'server non raggiungibile, riprovo…' }
+  es.onopen = () => { conn.className = 'pill ok'; conn.textContent = 'connected' }
+  es.onerror = () => { conn.className = 'pill'; conn.textContent = 'server unreachable, retrying…' }
   es.onmessage = (m) => {
     const data = JSON.parse(m.data)
     onAgents(data.agents ?? [])
@@ -1443,22 +1788,26 @@ function connect() {
     const before = JSON.stringify(layout.scenes[keyOf(sceneName)] ?? null)
     const mine = layout.scenes
     layout.scenes = l.scenes
-    // gli scenari che il server non ha ancora restano quelli locali
+    // scenes the server does not have yet stay as the local ones
     for (const k of Object.keys(mine)) if (k.endsWith('@3') && !layout.scenes[k]) layout.scenes[k] = mine[k]
     const after = JSON.stringify(layout.scenes[keyOf(sceneName)] ?? null)
     if (l.scene && l.scene !== sceneName && SCENES.some((s) => s.id === l.scene)) { switchScene(l.scene, false); return }
+    // the layout objects were just replaced: the furniture in the scene must edit the new ones, or later changes are never saved
+    const list = items()
+    for (const f of furn.values()) { const it = list.find((i) => i.id === f.id); if (it) f.item = it }
     if (before !== after && after !== 'null') syncFurniture()
   }
 }
 
-// ---------- Ciclo principale ----------
+// ---------- Main loop ----------
 let T = 0
 function tick(dt) {
   T += dt
   const now = performance.now()
   const k = 1 - Math.exp(-dt * 6)
-  // la camera segue l'agente selezionato
-  if (selected?.kind === 'agent') {
+  // the camera follows the selected agent
+  moveCamera(dt)
+  if (selected?.kind === 'agent' && !manualCam) {
     const ag = agents.get(selected.key)
     if (ag) { goal.target.set(clamp(ag.char.root.position.x * 0.7, -9, 9), 0.9, clamp(ag.char.root.position.z * 0.7, -6, 6)) }
   }
@@ -1481,7 +1830,7 @@ function loop(ts) {
   requestAnimationFrame(loop)
 }
 
-// ---------- Avvio ----------
+// ---------- Startup ----------
 sceneName = 'bridge'
 loadLocalLayout()
 world.setScene('bridge')
@@ -1489,10 +1838,11 @@ populate(true)
 buildSceneButtons()
 updateTodButton()
 updateSnd()
+setEditMode(false, true)
 connect()
 requestAnimationFrame(loop)
 
-// Aiuti per test e debug (anche quando il browser mette in pausa requestAnimationFrame)
+// Test and debug helpers (also when the browser pauses requestAnimationFrame)
 window.__ao = {
   step(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) tick(dt) },
   THREE, scene, camera, renderer, world, agents, furn, layout: () => layout, items, select, addFurniture, switchScene, goal, cam,

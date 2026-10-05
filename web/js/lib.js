@@ -1,4 +1,4 @@
-// Helper condivisi: materiali in cache, forme arrotondate "toy", ombre di contatto morbide.
+// Shared helpers: cached materials, rounded "toy" shapes, soft contact shadows.
 import * as THREE from 'three'
 export { THREE }
 
@@ -21,7 +21,7 @@ export function mat(color, o = {}) {
   return m
 }
 
-// Materiali luminosi (lampade, schermi): la luminosità segue il ciclo giorno/sera.
+// Glowing materials (lamps, screens): the brightness follows the day/evening cycle.
 export const glowMats = []
 export function glow(color, base = 1) {
   const m = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: base, roughness: 0.6 })
@@ -36,7 +36,7 @@ function cached(key, make) {
   return g
 }
 
-// Parallelepipedo con spigoli smussati (look "giocattolo")
+// Box with rounded edges ("toy" look)
 export function rboxGeo(w, h, d, r = 0.05) {
   r = Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)
   return cached(`rb${w}|${h}|${d}|${r}`, () => {
@@ -67,7 +67,7 @@ export function cyl(parent, rt, rb, h, color, x = 0, y = 0, z = 0, seg = 20, mat
   return m
 }
 export function sph(parent, r, color, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, material) {
-  // meno poligoni per le sfere piccole (non si nota, pesa molto meno)
+  // fewer polygons for small spheres (not noticeable, much lighter)
   const [ws, hs] = r > 0.3 ? [20, 14] : r > 0.1 ? [14, 10] : [9, 6]
   const m = place(new THREE.Mesh(cached(`sp${r}`, () => new THREE.SphereGeometry(r, ws, hs)), material ?? mat(color)), x, y, z)
   m.scale.set(sx, sy, sz)
@@ -90,7 +90,7 @@ export function capsule(parent, r, len, color, x = 0, y = 0, z = 0) {
   return m
 }
 
-// Ombra di contatto morbida (finta occlusione ambientale)
+// Soft contact shadow (fake ambient occlusion)
 let blobTex = null
 function blobTexture() {
   if (blobTex) return blobTex
@@ -121,7 +121,7 @@ export const rand = (seed) => { // generatore deterministico semplice
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
 }
 
-// Libera i materiali luminosi di un oggetto rimosso (quelli in cache sono condivisi e restano).
+// Frees the glowing materials of a removed object (cached ones are shared and stay).
 export function disposeGroup(g) {
   g.traverse((o) => {
     const m = o.material
@@ -131,9 +131,9 @@ export function disposeGroup(g) {
   })
 }
 
-// ---------- Fusione di mesh statiche (meno draw call) ----------
-// Unisce tutte le mesh opache e non luminose sotto `root` in una sola mesh con colori per vertice.
-// Le mesh trasparenti, luminose o escluse da `skip` restano separate.
+// ---------- Merging static meshes (fewer draw calls) ----------
+// Merges all opaque, non-glowing meshes under `root` into a single mesh with per-vertex colors.
+// Transparent meshes, glowing ones or those excluded by `skip` stay separate.
 const vertexMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 })
 export function bake(root, skip = () => false) {
   root.updateMatrixWorld(true)
@@ -179,7 +179,7 @@ export function bake(root, skip = () => false) {
   root.add(mesh)
 }
 
-// Fonde le mesh che condividono lo STESSO materiale (il materiale resta, quindi i colori restano modificabili).
+// Merges the meshes that share the SAME material (the material stays, so colors remain editable).
 export function bakeShared(root, skip = () => false) {
   root.updateMatrixWorld(true)
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert()
@@ -224,7 +224,7 @@ export function bakeShared(root, skip = () => false) {
   }
 }
 
-// Materiale "ologramma": traslucido e luminoso, segue la modalità luci della nave.
+// "Hologram" material: translucent and glowing, follows the ship light mode.
 export function holo(color, base = 0.9, opacity = 0.5) {
   const m = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: base, roughness: 0.4, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide })
   glowMats.push({ m, base })

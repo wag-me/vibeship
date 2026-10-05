@@ -1,8 +1,8 @@
 {
   "name": "Vibeship",
   "short_name": "Vibeship",
-  "description": "Una navicella 3D dove i tuoi agenti Claude Code lavorano in divisa da equipaggio.",
-  "lang": "it",
+  "description": "A 3D spaceship where your Claude Code agents work in crew uniforms.",
+  "lang": "en",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -1,71 +1,73 @@
-# 🚀 Vibeship
+<p align="center">
+  <img src="web/icons/logo.svg" alt="Vibeship: your agents, in orbit" width="560">
+</p>
 
-Una **navicella 3D** in cui i tuoi agenti [Claude Code](https://claude.com/claude-code) lavorano in divisa da equipaggio.
-È una *mod* (plugin) di Claude Code: ogni sessione diventa un animaletto che cammina, si siede alla console, pensa, dorme ed esulta mentre lavora davvero.
+A **3D spaceship** where your [Claude Code](https://claude.com/claude-code) agents work in crew uniforms.
+It is a Claude Code *mod* (plugin): every session becomes a little animal that walks, sits at the console, thinks, sleeps and cheers while it really works.
 
-## Cosa fa
-- **Vedi cosa fanno gli agenti**: leggono, scrivono, eseguono comandi, cercano sul web. Ogni agente ha una specie (volpe, gatto, cane, procione, coniglio, orso, uccellino) e una divisa (capitano, ingegnere, pilota, scienziato, medico, esploratore, cadetto).
-- **Tre luoghi** (Plancia, Sala macchine, Serra), ognuno con i suoi agenti. Si spostano dal portello, dalla scheda o trascinando sulla scheda del luogo.
-- **Parli con gli agenti** dalla finestra: vedi la conversazione, lo stato di ogni messaggio e la risposta. Puoi fermare o chiudere un agente.
-- **Permessi**: quando Claude chiede conferma, la nave va in allerta e approvi o neghi dalla finestra (se non rispondi entro ~30 s la domanda passa al terminale).
-- **Subagenti**: un drone parte dall'agente principale e atterra sul pad di lancio, dove il subagente si materializza; a fine missione torna con il risultato.
-- **Nuovi agenti**: dal pulsante *Agente* scegli luogo, personaggio, divisa e cartella (anche un **nuovo progetto**, con `git init` facoltativo) e si apre un terminale con Claude Code.
-- Arredi trascinabili e ruotabili, catalogo con anteprime 3D, luci della nave (normale, allerta rossa, soffuse).
+## What it does
+- **See what your agents are doing**: they read, write, run commands, search the web. Each agent has a species (fox, cat, dog, raccoon, rabbit, bear, bird) and a uniform (captain, engineer, pilot, scientist, medic, explorer, cadet).
+- **Three locations** (Bridge, Engine room, Greenhouse), each with its own agents. Agents move through the hatch, from their card, or by dragging onto a location's tab.
+- **Talk to your agents** from the window: see the conversation, the state of each message and the reply. You can stop or close an agent.
+- **Permissions**: when Claude asks for confirmation, the ship goes on alert and you approve or deny from the window (if you don't answer within ~30 s the question falls back to the terminal).
+- **Subagents**: a drone leaves the main agent and lands on the launch pad, where the subagent materializes; at the end of the mission it returns with the result.
+- **New agents**: from the *Agent* button pick location, character, uniform and folder (even a **new project**, with optional `git init`) and a terminal with Claude Code opens.
+- **Statistics**: the 📊 button shows tokens in/out, sessions, replies, tool usage and the busiest projects and models, over 7, 14 or 30 days (read from Claude Code's own transcripts).
+- Draggable, rotatable furniture, a catalog with 3D previews, ship lights (normal, red alert, dimmed).
 
-## Requisiti
-- Claude Code **2.1.287 o successivo** (le mod non esistono nelle versioni precedenti)
+## Requirements
+- Claude Code **2.1.287 or later** (mods do not exist in earlier versions)
 - Node.js
-- Un browser con WebGL (Edge, Chrome, Firefox). Windows è la piattaforma provata; macOS è scritto ma non provato.
+- A browser with WebGL (Edge, Chrome, Firefox). Windows is the tested platform; macOS is written but untested.
 
-## Uso
+## Usage
 ```bash
-claude --plugin-dir /percorso/a/vibeship
+claude --plugin-dir /path/to/vibeship
 ```
-Poi, nella sessione:
+Then, in the session:
 
-| Comando | Cosa fa |
+| Command | What it does |
 | :- | :- |
-| `/vibeship` | avvia il server locale e apre la finestra 3D |
-| `/vibeship-text` | vista testuale dentro il terminale |
+| `/vibeship` | starts the local server and opens the 3D window |
 
-(`/office` e `/office-pane` sono i vecchi nomi: funzionano ancora ma sono nascosti.)
-
-Per averla in ogni progetto, in `~/.claude/settings.json`:
+To have it in every project, in `~/.claude/settings.json`:
 ```json
-{ "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/percorso/a/vibeship" } }
+{ "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/vibeship" } }
 ```
 
-## Variabili d'ambiente
-| Variabile | Effetto |
+## Environment variables
+| Variable | Effect |
 | :- | :- |
-| `AGENT_OFFICE_PORT` | porta del server locale (default 47890) |
-| `AGENT_OFFICE_DIR` | cartella dei dati (token, layout); default `~/.claude-agent-office` |
-| `AGENT_OFFICE_NAME` | nome dell'abitante (default: nome della cartella) |
-| `AGENT_OFFICE_LOOK` | aspetto, `specie:divisa` (es. `fox:3`) |
-| `AGENT_OFFICE_LOC` | luogo: `bridge`, `engine` o `habitat` |
+| `AGENT_OFFICE_PORT` | local server port (default 47890) |
+| `AGENT_OFFICE_DIR` | data folder (token, layout); default `~/.claude-agent-office` |
+| `AGENT_OFFICE_NAME` | resident's name (default: folder name) |
+| `AGENT_OFFICE_LOOK` | look, `species:uniform` (e.g. `fox:3`) |
+| `AGENT_OFFICE_LOC` | location: `bridge`, `engine` or `habitat` |
 
-## Sicurezza
-- Il server ascolta **solo su `127.0.0.1`**.
-- Chat, stop, chiusura, permessi, spostamenti, nuovi agenti e creazione di cartelle richiedono un **token** casuale, salvato in un file nella tua cartella utente e passato solo alla finestra aperta da `/vibeship`.
-- La mod **non è in sandbox**: ha gli stessi accessi di Claude Code. Il pulsante *Agente* può aprire un terminale con Claude Code in una cartella che scegli. Installa mod solo da fonti di cui ti fidi.
+## Security
+- The server listens **only on `127.0.0.1`**.
+- Chat, stop, close, permissions, moves, new agents, statistics and folder creation require a random **token**, saved in a file in your user folder and passed only to the window opened by `/vibeship`.
+- The mod is **not sandboxed**: it has the same access as Claude Code. The *Agent* button can open a terminal with Claude Code in a folder you choose. Only install mods from sources you trust.
 
-## Struttura
+## Structure
 ```
 .claude-plugin/plugin.json   manifest
-hooks/                        la mod (eventi, comandi, vista testuale)
-server/server.js              server locale (SSE, comandi, permessi, avvio agenti), senza dipendenze
-web/                          la finestra 3D (Three.js, nessun build)
-  js/                         scena, personaggi, arredi, effetti, audio
+hooks/                        the mod (events and commands)
+server/server.js              local server (SSE, commands, permissions, agent launch, stats), no dependencies
+web/                          the 3D window (Three.js, no build step)
+  js/                         scene, characters, furniture, effects, audio
   vendor/three/               Three.js (MIT)
-tests/                        test della mod (`claude plugin test`)
+tests/                        mod tests (`claude plugin test`), server tests (`node --test tests/server.test.js`), live window check (`node tests/ui-smoke.js`)
 ```
 
-## Sviluppo
+## Development
 ```bash
 claude plugin validate .
 claude plugin test .
+node --test tests/server.test.js
+node tests/ui-smoke.js   # opens the window in headless Edge/Chrome and checks it
 ```
-La finestra si ricarica con Ctrl+R: i file sono serviti da disco, non serve riavviare il server per le modifiche in `web/`.
+Reload the window with Ctrl+R: files are served from disk, so changes in `web/` do not need a server restart.
 
-## Licenze
-Three.js è incluso in `web/vendor/three/` con la sua licenza MIT. Per questo progetto non è ancora stata scelta una licenza.
+## Licenses
+Vibeship is released under the [MIT License](LICENSE). Three.js is included in `web/vendor/three/` under its own MIT license.

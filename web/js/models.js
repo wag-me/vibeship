@@ -1,12 +1,12 @@
-// Catalogo degli arredi della navicella: modelli procedurali low-poly, stile "giocattolo spaziale".
-// Convenzione: il "fronte" dell'oggetto guarda +z. Unità ≈ metri.
+// Catalog of the spaceship furniture: procedural low-poly models, "space toy" style.
+// Convention: the "front" of the object faces +z. Units ≈ meters.
 import { THREE, mat, glow, holo, box, cyl, sph, capsule, blob, bake } from './lib.js'
 
 const METAL = '#b9c3dc', METAL_D = '#6f7b99', DARK = '#2a3150', NAVY = '#161d3a', WHITE = '#eef3ff'
 const CYAN = 0x4de0ff, PINK = 0xff7ad9, AMBER = 0xffc65a, GREEN = 0x6dffb0, VIOLET = 0xb08cff
 
 // ---------- Pezzi riusabili ----------
-// Sedile da pilota: lo schienale sta sul lato +z (lontano dalla scrivania)
+// Pilot seat: the backrest is on the +z side (away from the desk)
 function addSeat(g, x, z, color = '#3fb5d6') {
   const c = new THREE.Group()
   cyl(c, 0.06, 0.06, 0.4, '#58648a', 0, 0.22, 0, 8)
@@ -20,7 +20,7 @@ function addSeat(g, x, z, color = '#3fb5d6') {
   g.add(c)
 }
 
-// Schermo olografico con cornice e righe di dati
+// Holographic screen with frame and data lines
 function screen(g, x, y, z, w, h, ry = 0, color = CYAN) {
   const s = new THREE.Group()
   box(s, w + 0.08, h + 0.08, 0.04, '#222a48', 0, 0, 0, 0.02)
@@ -372,45 +372,45 @@ B.cryopod = () => {
 }
 
 // ---------- Catalogo ----------
-// w/d = ingombro (prima della rotazione); seat = dove si mette l'agente (sistema locale), sit = seduto
+// w/d = footprint (before rotation); seat = where the agent stands (local system), sit = seated
 export const CATALOG = {
-  console:    { label: 'Console di comando', cat: 'work', w: 2.4, d: 1.1, work: true, seat: { x: 0, z: 1.15, sit: true }, scenes: ['bridge', 'engine', 'habitat'] },
-  holotable:  { label: 'Tavolo olografico',  cat: 'work', w: 1.9, d: 1.9, work: true, seat: { x: 0, z: 1.45, sit: false }, scenes: ['bridge', 'habitat'] },
-  starmap:    { label: 'Mappa stellare',     cat: 'work', w: 2.2, d: 0.6, scenes: ['bridge', 'engine', 'habitat'] },
-  workbench:  { label: 'Banco ingegneria',   cat: 'work', w: 2.4, d: 1.1, work: true, seat: { x: 0, z: 1.0, sit: false }, scenes: ['engine'] },
-  reactor:    { label: 'Nucleo energetico',  cat: 'work', w: 1.9, d: 1.9, work: true, seat: { x: 0, z: 1.6, sit: false }, scenes: ['engine'] },
-  servers:    { label: 'Rack dati',          cat: 'work', w: 1.0, d: 1.0, work: true, seat: { x: 0, z: 0.95, sit: false }, scenes: ['bridge', 'engine'] },
-  scanner:    { label: 'Postazione scanner', cat: 'work', w: 1.5, d: 0.9, work: true, seat: { x: 0, z: 1.0, sit: true }, scenes: ['habitat', 'engine'] },
+  console:    { label: 'Command console', cat: 'work', w: 2.4, d: 1.1, work: true, seat: { x: 0, z: 1.15, sit: true }, scenes: ['bridge', 'engine', 'habitat'] },
+  holotable:  { label: 'Holographic table',  cat: 'work', w: 1.9, d: 1.9, work: true, seat: { x: 0, z: 1.45, sit: false }, scenes: ['bridge', 'habitat'] },
+  starmap:    { label: 'Star map',     cat: 'work', w: 2.2, d: 0.6, scenes: ['bridge', 'engine', 'habitat'] },
+  workbench:  { label: 'Engineering bench',   cat: 'work', w: 2.4, d: 1.1, work: true, seat: { x: 0, z: 1.0, sit: false }, scenes: ['engine'] },
+  reactor:    { label: 'Energy core',  cat: 'work', w: 1.9, d: 1.9, work: true, seat: { x: 0, z: 1.6, sit: false }, scenes: ['engine'] },
+  servers:    { label: 'Data rack',          cat: 'work', w: 1.0, d: 1.0, work: true, seat: { x: 0, z: 0.95, sit: false }, scenes: ['bridge', 'engine'] },
+  scanner:    { label: 'Scanner station', cat: 'work', w: 1.5, d: 0.9, work: true, seat: { x: 0, z: 1.0, sit: true }, scenes: ['habitat', 'engine'] },
 
-  sofa:       { label: 'Divano',             cat: 'relax', w: 2.4, d: 1.0 },
-  armchair:   { label: 'Poltrona',           cat: 'relax', w: 1.15, d: 1.0 },
-  coffeetable:{ label: 'Tavolino antigrav',  cat: 'relax', w: 1.3, d: 1.3 },
-  datashelf:  { label: 'Scaffale dati',      cat: 'relax', w: 1.7, d: 0.5 },
-  lamp:       { label: 'Lampada al neon',    cat: 'relax', w: 0.6, d: 0.6 },
+  sofa:       { label: 'Sofa',             cat: 'relax', w: 2.4, d: 1.0, rest: [{ x: -0.7, z: 0.1 }, { x: 0.7, z: 0.1 }] }, // rest = seats an idle agent can take (local coordinates, facing +z)
+  armchair:   { label: 'Armchair',           cat: 'relax', w: 1.15, d: 1.0, rest: [{ x: 0, z: 0.1 }] },
+  coffeetable:{ label: 'Antigrav coffee table',  cat: 'relax', w: 1.3, d: 1.3 },
+  datashelf:  { label: 'Data shelf',      cat: 'relax', w: 1.7, d: 0.5 },
+  lamp:       { label: 'Neon lamp',    cat: 'relax', w: 0.6, d: 0.6 },
 
-  plant:      { label: 'Pianta piccola',     cat: 'nature', w: 0.6, d: 0.6 },
-  plantbig:   { label: 'Pianta grande',      cat: 'nature', w: 0.9, d: 0.9 },
-  bonsai:     { label: 'Bonsai in cupola',   cat: 'nature', w: 1.3, d: 1.3 },
+  plant:      { label: 'Small plant',     cat: 'nature', w: 0.6, d: 0.6 },
+  plantbig:   { label: 'Large plant',      cat: 'nature', w: 0.9, d: 0.9 },
+  bonsai:     { label: 'Domed bonsai',   cat: 'nature', w: 1.3, d: 1.3 },
 
-  replicator: { label: 'Replicatore',        cat: 'fun', w: 1.0, d: 0.8 },
+  replicator: { label: 'Replicator',        cat: 'fun', w: 1.0, d: 0.8 },
   arcade:     { label: 'Arcade',             cat: 'fun', w: 1.0, d: 0.9 },
-  crates:     { label: 'Casse rifornimenti', cat: 'fun', w: 1.5, d: 0.8 },
-  droid:      { label: 'Droide di bordo',    cat: 'fun', w: 0.9, d: 0.9 },
-  cryopod:    { label: 'Capsula criogenica', cat: 'fun', w: 2.3, d: 1.1 },
+  crates:     { label: 'Supply crates', cat: 'fun', w: 1.5, d: 0.8 },
+  droid:      { label: 'Onboard droid',    cat: 'fun', w: 0.9, d: 0.9 },
+  cryopod:    { label: 'Cryo pod', cat: 'fun', w: 2.3, d: 1.1 },
 }
 export const CATEGORIES = [
-  { id: 'work', label: 'Lavoro', icon: '🛰️' },
+  { id: 'work', label: 'Work', icon: '🛰️' },
   { id: 'relax', label: 'Relax', icon: '🛋️' },
-  { id: 'nature', label: 'Natura', icon: '🌿' },
-  { id: 'fun', label: 'Svago', icon: '🎮' },
+  { id: 'nature', label: 'Nature', icon: '🌿' },
+  { id: 'fun', label: 'Fun', icon: '🎮' },
 ]
 export const catalogFor = (scene) => Object.entries(CATALOG).filter(([, d]) => !d.scenes || d.scenes.includes(scene))
 
-// Crea il modello 3D di un tipo. Ritorna { group, inner, sway, spin, blink, def }
+// Creates the 3D model of a type. Returns { group, inner, sway, spin, blink, def }
 export function buildModel(type) {
   const def = CATALOG[type]
   const made = B[type]()
-  // fonde le parti statiche in una sola mesh; parti animate e materiali luminosi restano a parte
+  // merges the static parts into a single mesh; animated parts and glowing materials stay separate
   const moving = [...(made.sway ?? []), ...(made.spin ?? [])].map((s) => s.obj)
   bake(made.group, (m) => { for (let o = m; o; o = o.parent) if (moving.includes(o)) return true; return false })
   const group = new THREE.Group()
@@ -419,7 +419,7 @@ export function buildModel(type) {
   return { group, inner: made.group, sway: made.sway ?? [], spin: made.spin ?? [], blink: made.blink ?? [], def }
 }
 
-// Il pad di lancio dei subagenti: fisso, uguale in ogni luogo, non è nel catalogo
+// The subagent launch pad: fixed, the same in every location, not in the catalog
 export function buildPad() {
   const made = B.pad()
   bake(made.group)

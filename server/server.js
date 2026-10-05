@@ -1,5 +1,5 @@
-// Server locale di Vibeship: riceve gli eventi dalla mod e li pubblica alla finestra web (SSE).
-// Nessuna dipendenza. Ascolta solo su 127.0.0.1.
+// Vibeship local server: receives events from the mod and publishes them to the web window (SSE).
+// No dependencies. Listens on 127.0.0.1 only.
 const http = require('http')
 const fs = require('fs')
 const os = require('os')
@@ -13,7 +13,7 @@ const DATA_DIR = process.env.AGENT_OFFICE_DIR || path.join(os.homedir(), '.claud
 const LAYOUT_FILE = path.join(DATA_DIR, 'layout.json')
 const IDLE_AFTER_MS = 8000
 
-// agents: key "<session>:<id>" -> agente
+// agents: key "<session>:<id>" -> agent
 const agents = new Map()
 let layout = { scene: 'office', scenes: {} }
 try {
@@ -22,10 +22,10 @@ try {
 
 const clients = new Set()
 
-// Token casuale: serve a chi invia comandi (finestra) e a chi li ritira (mod).
-// Sta in un file nella tua cartella utente, quindi un sito web qualsiasi non può leggerlo.
-// Viene creato UNA volta e riusato: un server riavviato o una seconda istanza che esce subito
-// non cambiano il token, quindi le finestre già aperte restano valide.
+// Random token: needed by whoever sends commands (window) and whoever picks them up (mod).
+// It lives in a file in your user folder, so an arbitrary website cannot read it.
+// It is created ONCE and reused: a restarted server or a second instance that exits right away
+// does not change the token, so windows that are already open stay valid.
 const TOKEN_FILE = path.join(DATA_DIR, 'token')
 let TOKEN = null
 try {
@@ -39,9 +39,10 @@ if (!TOKEN) {
     fs.writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 })
   } catch {}
 }
-const queues = new Map() // session -> [comando]
-const chat = new Map() // session -> [messaggi]  { id, role:'user'|'assistant', text, state, via, ts }
-const perms = new Map() // id -> richiesta di permesso in attesa
+const queues = new Map() // session -> [command]
+const chat = new Map() // session -> [messages]  { id, role:'user'|'assistant', text, state, via, ts }
+const cmds = new Map() // session -> [{ name, description }] slash commands of that session
+const perms = new Map() // id -> pending permission request
 const permWaiters = new Map() // id -> [{ res, timer }]
 const rid = () => crypto.randomBytes(6).toString('hex')
 const json = (res, obj, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)) }
@@ -72,14 +73,14 @@ function saveLayout() {
   } catch {}
 }
 
-// Due agenti con lo stesso nome (es. stessa cartella) diventano "nome", "nome #2", "nome #3"...
+// Two agents with the same name (e.g. same folder) become "name", "name #2", "name #3"...
 function uniqueName(base, key) {
   const taken = new Set([...agents.values()].filter((x) => x.kind === 'main' && x.key !== key).map((x) => x.name))
   if (!taken.has(base)) return base
   for (let n = 2; ; n++) if (!taken.has(base + ' #' + n)) return base + ' #' + n
 }
 const SPECIES = ['fox', 'cat', 'dog', 'raccoon', 'rabbit', 'bear', 'bird']
-// Luoghi della nave: ogni agente sta in uno, i subagenti seguono quello del loro agente principale
+// Ship locations: each agent is in one, subagents follow the location of their main agent
 const LOCS = ['bridge', 'engine', 'habitat']
 const cleanLoc = (l) => (LOCS.includes(l) ? l : undefined)
 function leastBusyLoc(exceptKey) {
@@ -101,13 +102,13 @@ function mainOf(session, label, look, loc) {
     agents.set(key, { key, session, id: 'main', name: uniqueName(label || 'Claude', key), kind: 'main', status: 'idle', detail: '', bound: true, t: Date.now(), look: cleanLook(look), loc: cleanLoc(loc) ?? leastBusyLoc(key) })
   } else if (label) {
     const a = agents.get(key)
-    // un nome gia' valido (es. "x #2") non cambia se la base e' la stessa
+    // an already valid name (e.g. "x #2") does not change if the base is the same
     if (a.name !== label && !a.name.startsWith(label + ' #')) a.name = uniqueName(label, key)
   }
   return agents.get(key)
 }
 
-// Il primo tool.call di un subagente non ancora associato lo associa all'agentId.
+// The first tool.call of a subagent that is not yet bound binds it to the agentId.
 function resolve(session, agentId) {
   if (!agentId) return mainOf(session)
   const key = session + ':' + agentId
@@ -122,7 +123,7 @@ function resolve(session, agentId) {
       return a
     }
   }
-  const a = { key, session, id: agentId, name: 'subagente', kind: 'sub', status: 'idle', detail: '', bound: true, t: Date.now() }
+  const a = { key, session, id: agentId, name: 'subagent', kind: 'sub', status: 'idle', detail: '', bound: true, t: Date.now() }
   agents.set(key, a)
   return a
 }
@@ -137,11 +138,23 @@ function handleEvent(ev) {
     case 'session_end':
       for (const [k, a] of agents) if (a.session === session) agents.delete(k)
       chat.delete(session)
+      cmds.delete(session)
       for (const [id, p] of perms) if (p.session === session) endPerm(id)
       break
-    case 'prompt_in': // messaggio scritto nel terminale
+    case 'prompt_in': // message typed in the terminal
       if (typeof ev.text === 'string' && ev.text.trim()) addChat(session, { role: 'user', text: ev.text.slice(0, 4000), state: 'working', via: 'terminal' })
       break
+    case 'commands':
+      if (Array.isArray(ev.list)) cmds.set(session, ev.list.filter((c) => c && typeof c.name === 'string').slice(0, 500).map((c) => ({ name: c.name.slice(0, 80), description: String(c.description || '').slice(0, 120) })))
+      break
+    case 'command_result': { // a slash command typed in the window chat has run
+      const m = (chat.get(session) || []).find((x) => x.id === ev.id)
+      if (m) m.state = ev.ok ? 'done' : 'error'
+      const text = typeof ev.text === 'string' ? ev.text.trim().slice(0, 4000) : ''
+      if (text || !ev.ok) addChat(session, { role: 'assistant', text: text || 'The command failed.', state: ev.ok ? 'command' : 'error' })
+      else addChat(session, { role: 'assistant', text: 'Done, no text output. If the command opened a selector, answer it in the terminal.', state: 'command' })
+      break
+    }
     case 'say_delivered': {
       const m = (chat.get(session) || []).find((x) => x.id === ev.id)
       if (m && m.state === 'queued') m.state = 'sent'
@@ -172,10 +185,10 @@ function handleEvent(ev) {
     }
     case 'spawn': {
       const key = session + ':spawn:' + ev.toolUseId
-      agents.set(key, { key, session, id: key, name: ev.name || 'subagente', kind: 'sub', status: 'read', detail: ev.description || '', task: ev.description ? String(ev.description).slice(0, 160) : '', bound: false, t: now })
+      agents.set(key, { key, session, id: key, name: ev.name || 'subagent', kind: 'sub', status: 'read', detail: ev.description || '', task: ev.description ? String(ev.description).slice(0, 160) : '', bound: false, t: now })
       break
     }
-    case 'sub_done': { // un subagente ha finito il suo lavoro: resta qualche secondo col risultato
+    case 'sub_done': { // a subagent has finished its work: it stays a few seconds with the result
       const a = resolve(session, ev.agentId)
       a.status = 'idle'
       a.detail = ''
@@ -185,7 +198,7 @@ function handleEvent(ev) {
       break
     }
     case 'turn_complete': {
-      // i subagenti ancora attivi a fine turno restano qualche secondo (la loro fine puo' arrivare dopo) e poi spariscono
+      // subagents still active at the end of the turn stay a few seconds (their end may arrive later) and then disappear
       for (const a of agents.values()) if (a.session === session && a.kind === 'sub' && !a.done) { a.done = true; a.doneAt = now; a.status = 'idle'; a.detail = '' }
       const m = mainOf(session)
       m.status = 'idle'
@@ -195,7 +208,7 @@ function handleEvent(ev) {
       const running = (chat.get(session) || []).filter((m) => m.role === 'user' && m.state === 'working')
       if (running.length) running.forEach((m) => { m.state = end })
       else { const u = lastUser(session, ['sent', 'queued']); if (u) u.state = end }
-      const text = typeof ev.answer === 'string' && ev.answer.trim() ? ev.answer.slice(0, 4000) : reason === 'aborted' ? 'Lavoro interrotto.' : reason === 'answer' ? '' : 'Qualcosa è andato storto.'
+      const text = typeof ev.answer === 'string' && ev.answer.trim() ? ev.answer.slice(0, 4000) : reason === 'aborted' ? 'Work interrupted.' : reason === 'answer' ? '' : 'Something went wrong.'
       if (text) addChat(session, { role: 'assistant', text, state: reason })
       break
     }
@@ -204,7 +217,7 @@ function handleEvent(ev) {
 }
 
 
-// ---------- Avvio di nuovi agenti (nuovo terminale con la mod) ----------
+// ---------- Launching new agents (new terminal with the mod) ----------
 const WIN = process.platform === 'win32'
 const RECENT_FILE = path.join(DATA_DIR, 'recent.json')
 let recent = []
@@ -229,28 +242,28 @@ function listDirs(p) {
   const ents = fs.readdirSync(full, { withFileTypes: true })
     .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !SKIP_DIRS.has(e.name))
     .map((e) => e.name)
-    .sort((a, b) => a.localeCompare(b, 'it'))
+    .sort((a, b) => a.localeCompare(b, 'en'))
     .slice(0, 400)
   const up = path.dirname(full)
   return { path: full, parent: up !== full ? up : WIN ? '' : null, dirs: ents.map((n) => ({ name: n, path: path.join(full, n) })), home, recent }
 }
-// Crea la cartella di un nuovo progetto dentro `parent` (con git init facoltativo).
-// Il nome deve essere un semplice nome di cartella: niente percorsi, niente nomi riservati di Windows.
+// Creates a new project folder inside `parent` (with optional git init).
+// The name must be a plain folder name: no paths, no reserved Windows names.
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
 function createProject(parent, name, git) {
-  if (typeof parent !== 'string' || !path.isAbsolute(parent)) throw new Error('Scegli prima la cartella dove crearlo')
+  if (typeof parent !== 'string' || !path.isAbsolute(parent)) throw new Error('First choose the folder to create it in')
   let st
-  try { st = fs.statSync(parent) } catch { throw new Error('La cartella di destinazione non esiste') }
-  if (!st.isDirectory()) throw new Error('La destinazione non è una cartella')
+  try { st = fs.statSync(parent) } catch { throw new Error('The destination folder does not exist') }
+  if (!st.isDirectory()) throw new Error('The destination is not a folder')
   const nm = String(name || '').trim()
   if (!nm || nm.length > 64 || !/^[\p{L}\p{N} _.\-]+$/u.test(nm) || nm.startsWith('.') || nm.endsWith('.') || RESERVED.test(nm)) {
-    throw new Error('Nome non valido: usa lettere, numeri, spazi, trattini e underscore')
+    throw new Error('Invalid name: use letters, numbers, spaces, hyphens and underscores')
   }
   const dir = path.join(parent, nm)
-  if (path.dirname(dir) !== path.resolve(parent)) throw new Error('Nome non valido')
+  if (path.dirname(dir) !== path.resolve(parent)) throw new Error('Invalid name')
   try { fs.mkdirSync(dir) } catch (e) {
-    if (e.code === 'EEXIST') throw new Error('Esiste già una cartella con questo nome')
-    throw new Error('Non riesco a creare la cartella: ' + (e.code || 'errore'))
+    if (e.code === 'EEXIST') throw new Error('A folder with this name already exists')
+    throw new Error('Cannot create the folder: ' + (e.code || 'error'))
   }
   let gitOk = false
   if (git) { try { gitOk = spawnSync('git', ['init'], { cwd: dir, stdio: 'ignore', timeout: 10000 }).status === 0 } catch {} }
@@ -260,11 +273,11 @@ function createProject(parent, name, git) {
 const q = (x) => "'" + String(x).replace(/'/g, "'\\''") + "'"
 let lastLaunch = 0
 function launchAgent(cwd, name, species, shirt, loc) {
-  if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || /["%\r\n]/.test(cwd)) throw new Error('Percorso non valido')
-  if (!fs.statSync(cwd).isDirectory()) throw new Error('Non è una cartella')
+  if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || /["%\r\n]/.test(cwd)) throw new Error('Invalid path')
+  if (!fs.statSync(cwd).isDirectory()) throw new Error('Not a folder')
   const plugin = path.join(__dirname, '..')
-  if (/["%\r\n]/.test(plugin)) throw new Error('Percorso della mod non supportato')
-  if (Date.now() - lastLaunch < 1500) throw new Error('Troppo veloce: riprova tra un attimo')
+  if (/["%\r\n]/.test(plugin)) throw new Error('Mod path not supported')
+  if (Date.now() - lastLaunch < 1500) throw new Error('Too fast: try again in a moment')
   lastLaunch = Date.now()
   const nm = String(name || '').replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, 40)
   const envs = []
@@ -276,7 +289,7 @@ function launchAgent(cwd, name, species, shirt, loc) {
   if (process.env.AGENT_OFFICE_DIR) envs.push(['AGENT_OFFICE_DIR', process.env.AGENT_OFFICE_DIR])
   fs.mkdirSync(DATA_DIR, { recursive: true })
   if (WIN) {
-    if (envs.some(([, v]) => /["%\r\n]/.test(v))) throw new Error('Variabile non supportata')
+    if (envs.some(([, v]) => /["%\r\n]/.test(v))) throw new Error('Unsupported variable')
     const f = path.join(DATA_DIR, 'launch-' + Date.now() + '.cmd')
     const lines = ['@echo off', 'title Vibeship', 'cd /d "' + cwd + '"', ...envs.map(([k, v]) => 'set "' + k + '=' + v + '"'), 'call claude --plugin-dir "' + plugin + '"', 'exit', '']
     fs.writeFileSync(f, lines.join('\r\n'))
@@ -289,9 +302,113 @@ function launchAgent(cwd, name, species, shirt, loc) {
     spawn('open', ['-a', 'Terminal', f], { detached: true, stdio: 'ignore' }).unref()
     setTimeout(() => fs.unlink(f, () => {}), 90000)
   } else {
-    throw new Error('Avvio automatico non supportato su questo sistema: apri un terminale e lancia claude con --plugin-dir')
+    throw new Error('Automatic launch is not supported on this system: open a terminal and run claude with --plugin-dir')
   }
   addRecent(cwd)
+}
+
+// ---------- Statistics (from Claude Code transcripts in ~/.claude/projects) ----------
+// Every "assistant" line has message.usage with the tokens. The same message can appear several times
+// (streaming): only the last occurrence per message.id is counted. Each file's result is cached (mtime+size).
+const PROJECTS_DIR = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects')
+const fileStats = new Map() // path -> { sig, data }
+const dayKey = (ts) => { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+function parseTranscript(file) {
+  const msgs = new Map()
+  let first = 0
+  let cwd = ''
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    if (!line.includes('"usage"')) continue
+    let o
+    try { o = JSON.parse(line) } catch { continue }
+    const m = o.message
+    if (o.type !== 'assistant' || !m || !m.usage) continue
+    const ts = Date.parse(o.timestamp)
+    if (!ts) continue
+    if (!first || ts < first) first = ts
+    if (o.cwd) cwd = o.cwd
+    const tools = Array.isArray(m.content) ? m.content.filter((c) => c && c.type === 'tool_use').map((c) => String(c.name)) : []
+    msgs.set(m.id || o.uuid, { ts, model: String(m.model || ''), u: m.usage, tools })
+  }
+  return { first, cwd, msgs: [...msgs.values()] }
+}
+function collectFiles() {
+  const out = []
+  let dirs = []
+  try { dirs = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true }).filter((e) => e.isDirectory()) } catch { return out }
+  for (const d of dirs) {
+    const dir = path.join(PROJECTS_DIR, d.name)
+    let names = []
+    try { names = fs.readdirSync(dir) } catch { continue }
+    for (const n of names) if (n.endsWith('.jsonl')) out.push({ file: path.join(dir, n), project: d.name })
+  }
+  return out
+}
+function computeStats(days) {
+  const now = Date.now()
+  const todayKey = dayKey(now)
+  const since = now - days * 86400000
+  const zero = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, messages: 0, sessions: 0, tools: 0 })
+  const total = zero()
+  const today = zero()
+  const range = zero()
+  const byDay = new Map()
+  const byModel = new Map()
+  const byProject = new Map()
+  const byTool = new Map()
+  const add = (t, u, tools) => { t.input += u.input_tokens || 0; t.output += u.output_tokens || 0; t.cacheRead += u.cache_read_input_tokens || 0; t.cacheWrite += u.cache_creation_input_tokens || 0; t.messages++; t.tools += tools }
+  const seen = new Set()
+  for (const { file, project } of collectFiles()) {
+    seen.add(file)
+    let st
+    try { st = fs.statSync(file) } catch { continue }
+    const sig = st.mtimeMs + ':' + st.size
+    let c = fileStats.get(file)
+    if (!c || c.sig !== sig) {
+      try { c = { sig, data: parseTranscript(file) } } catch { continue }
+      fileStats.set(file, c)
+    }
+    const { first, cwd, msgs } = c.data
+    if (!msgs.length) continue
+    const name = cwd ? cwd.split(/[\\/]/).filter(Boolean).pop() : project
+    const sessionDay = dayKey(first)
+    total.sessions++
+    if (sessionDay === todayKey) today.sessions++
+    if (first >= since) { range.sessions++; const d0 = byDay.get(sessionDay) || zero(); byDay.set(sessionDay, d0); d0.sessions++ }
+    const proj = byProject.get(name) || { name, ...zero() }
+    byProject.set(name, proj)
+    proj.sessions++
+    for (const m of msgs) {
+      add(total, m.u, m.tools.length)
+      const k = dayKey(m.ts)
+      if (k === todayKey) add(today, m.u, m.tools.length)
+      if (m.ts >= since) {
+        add(range, m.u, m.tools.length)
+        const day = byDay.get(k) || zero()
+        byDay.set(k, day)
+        add(day, m.u, m.tools.length)
+        const mod = byModel.get(m.model || 'unknown') || { name: m.model || 'unknown', ...zero() }
+        byModel.set(mod.name, mod)
+        add(mod, m.u, m.tools.length)
+        add(proj, m.u, m.tools.length)
+        for (const t of m.tools) byTool.set(t, (byTool.get(t) || 0) + 1)
+      }
+    }
+  }
+  for (const f of fileStats.keys()) if (!seen.has(f)) fileStats.delete(f)
+  const series = []
+  for (let i = days - 1; i >= 0; i--) {
+    const k = dayKey(now - i * 86400000)
+    series.push({ day: k, ...(byDay.get(k) || zero()) })
+  }
+  const top = (map, n) => [...map.values()].sort((a, b) => b.input + b.output - (a.input + a.output)).slice(0, n)
+  return {
+    days, total, today, range, series,
+    models: top(byModel, 6),
+    projects: top(byProject, 8).filter((p) => p.messages > 0),
+    tools: [...byTool].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count })),
+    live: { agents: [...agents.values()].filter((a) => a.kind === 'main').length, subagents: [...agents.values()].filter((a) => a.kind === 'sub').length },
+  }
 }
 
 function endPerm(id) {
@@ -305,7 +422,7 @@ function decidePerm(id, decision) {
   p.decision = decision
   for (const w of permWaiters.get(id) || []) { clearTimeout(w.timer); json(w.res, { decision }) }
   permWaiters.delete(id)
-  setTimeout(() => { perms.delete(id); broadcast() }, 1800) // la finestra vede l'esito e poi lo chiude
+  setTimeout(() => { perms.delete(id); broadcast() }, 1800) // the window sees the outcome and then closes it
   return true
 }
 
@@ -368,7 +485,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/command') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     return readBody(req, (c) => {
-      const ok = c && typeof c.session === 'string' && ['say', 'stop', 'close'].includes(c.kind) && (c.kind !== 'say' || (typeof c.text === 'string' && c.text.trim()))
+      const ok = c && typeof c.session === 'string' && ['say', 'stop', 'close', 'commands'].includes(c.kind) && (c.kind !== 'say' || (typeof c.text === 'string' && c.text.trim()))
       if (ok) {
         const q = queues.get(c.session) || []
         let id
@@ -376,7 +493,7 @@ const server = http.createServer((req, res) => {
         q.push({ kind: c.kind, id, text: c.kind === 'say' ? c.text.trim().slice(0, 4000) : undefined })
         queues.set(c.session, q.slice(-20))
         if (c.kind === 'close') {
-          // se la sessione non risponde entro pochi secondi, la tolgo comunque dalla finestra
+          // if the session does not respond within a few seconds, remove it from the window anyway
           const sid = c.session
           setTimeout(() => { if ([...agents.values()].some((a) => a.session === sid)) handleEvent({ type: 'session_end', session: sid }) }, 7000)
         }
@@ -386,6 +503,10 @@ const server = http.createServer((req, res) => {
       res.end()
     })
   }
+  if (req.method === 'GET' && url.pathname === '/api/commands') {
+    if (!authed(req)) { res.writeHead(401); return res.end() }
+    return json(res, { commands: cmds.get(url.searchParams.get('session') || '') || [] })
+  }
   if (req.method === 'GET' && url.pathname === '/api/poll') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     const sid = url.searchParams.get('session') || ''
@@ -394,22 +515,27 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ commands: q }))
   }
+  if (req.method === 'GET' && url.pathname === '/api/stats') {
+    if (!authed(req)) { res.writeHead(401); return res.end() }
+    const days = [7, 14, 30].includes(Number(url.searchParams.get('days'))) ? Number(url.searchParams.get('days')) : 14
+    try { return json(res, computeStats(days)) } catch { return json(res, { error: 'Statistics not available' }, 500) }
+  }
   if (req.method === 'GET' && url.pathname === '/api/dirs') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
-    try { return json(res, listDirs(url.searchParams.get('path') || '')) } catch (e) { return json(res, { error: 'Cartella non leggibile' }, 400) }
+    try { return json(res, listDirs(url.searchParams.get('path') || '')) } catch (e) { return json(res, { error: 'Folder not readable' }, 400) }
   }
   if (req.method === 'POST' && url.pathname === '/api/mkdir') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     return readBody(req, (b) => {
-      if (!b) return json(res, { error: 'Richiesta non valida' }, 400)
-      try { json(res, createProject(b.parent, b.name, !!b.git)) } catch (e) { json(res, { error: e.message || 'Errore' }, 400) }
+      if (!b) return json(res, { error: 'Invalid request' }, 400)
+      try { json(res, createProject(b.parent, b.name, !!b.git)) } catch (e) { json(res, { error: e.message || 'Error' }, 400) }
     })
   }
   if (req.method === 'POST' && url.pathname === '/api/spawn') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     return readBody(req, (b) => {
-      if (!b) return json(res, { error: 'Richiesta non valida' }, 400)
-      try { launchAgent(b.cwd, b.name, b.species, b.shirt, b.loc); json(res, { ok: true }) } catch (e) { json(res, { error: e.message || 'Errore' }, 400) }
+      if (!b) return json(res, { error: 'Invalid request' }, 400)
+      try { launchAgent(b.cwd, b.name, b.species, b.shirt, b.loc); json(res, { ok: true }) } catch (e) { json(res, { error: e.message || 'Error' }, 400) }
     })
   }
   if (req.method === 'POST' && url.pathname === '/api/move') {
@@ -425,7 +551,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/permission') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     return readBody(req, (b) => {
-      const ok = b && typeof b.id === 'string' && ['allow', 'deny'].includes(b.decision) && decidePerm(b.id, b.decision)
+      const ok = b && typeof b.id === 'string' && ['allow', 'allow_session', 'deny'].includes(b.decision) && decidePerm(b.id, b.decision)
       if (ok) broadcast()
       res.writeHead(ok ? 204 : 400)
       res.end()
@@ -458,7 +584,7 @@ const server = http.createServer((req, res) => {
     })
   }
 
-  // File statici
+  // Static files
   const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1)
   const file = path.normalize(path.join(WEB, rel))
   if (!file.startsWith(WEB)) {
@@ -475,5 +601,5 @@ const server = http.createServer((req, res) => {
   })
 })
 
-server.on('error', () => process.exit(0)) // porta già occupata: c'è un altro server attivo
+server.on('error', () => process.exit(0)) // port already in use: another server is running
 server.listen(PORT, '127.0.0.1')

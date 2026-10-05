@@ -15,3 +15,5 @@ Thumbs.db
 .claude-agent-office/
 launch-*.cmd
 launch-*.command
+
+tests/ui-smoke.png

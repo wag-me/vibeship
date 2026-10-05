@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -20,14 +20,14 @@
   }
   * { box-sizing: border-box; }
 
-  /* ---- Barre di scorrimento a tema: sottili, arrotondate, stesso verde acqua dei pulsanti ---- */
+  /* ---- Themed scrollbars: thin, rounded, same teal as the buttons ---- */
   *::-webkit-scrollbar { width: 14px; height: 14px; }
   *::-webkit-scrollbar-track { background: var(--cream2); border-radius: 999px; margin: 8px 0; box-shadow: inset 0 0 0 3px var(--cream); }
   *::-webkit-scrollbar-thumb { background: var(--leaf); border-radius: 999px; border: 3px solid var(--cream); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .16); min-height: 40px; }
   *::-webkit-scrollbar-thumb:hover { background: #4fd6c5; }
   *::-webkit-scrollbar-thumb:active { background: var(--leaf-d); }
   *::-webkit-scrollbar-corner { background: transparent; }
-  /* i browser senza ::-webkit-scrollbar (es. Firefox) usano le proprietà standard */
+  /* browsers without ::-webkit-scrollbar (e.g. Firefox) use the standard properties */
   @supports not selector(::-webkit-scrollbar) {
     * { scrollbar-width: thin; scrollbar-color: var(--leaf) var(--cream2); }
   }
@@ -41,12 +41,11 @@
   canvas#gl.fade { opacity: 0; filter: blur(6px); }
   #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 
-  /* ---- Barra superiore ---- */
-  header { position: absolute; z-index: 5; left: 14px; right: 14px; top: 12px; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; pointer-events: none; }
+  /* ---- Top bar ---- */
+  header { position: absolute; z-index: 7; left: 14px; right: 14px; top: 12px; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; pointer-events: none; }
   header > * { pointer-events: auto; }
-  .brand { display: flex; align-items: center; gap: 8px; background: var(--cream); border: 3px solid #fff; border-radius: 999px; padding: 6px 16px 6px 10px; box-shadow: var(--shadow); font-size: 17px; font-weight: 900; }
-  .brand img { display: block; width: 34px; height: 34px; border-radius: 10px; box-shadow: 0 2px 0 rgba(20,30,70,.3); animation: sway 3.6s ease-in-out infinite; transform-origin: 50% 90%; }
-  @keyframes sway { 50% { transform: rotate(14deg); } }
+  .brand { display: block; line-height: 0; filter: drop-shadow(0 3px 0 rgba(0, 0, 8, .45)); }
+  .brand img { display: block; height: 54px; width: auto; }
   .dock { display: flex; gap: 6px; background: var(--cream); border: 3px solid #fff; border-radius: 999px; padding: 5px; box-shadow: var(--shadow); }
   .btn { position: relative; display: inline-flex; align-items: center; gap: 6px; background: var(--cream2); border: 0; border-radius: 999px; padding: 7px 14px; font-weight: 800; box-shadow: 0 3px 0 rgba(120,85,40,.2); transition: transform .08s, box-shadow .08s, background .15s; }
   .btn:hover { background: #fff; transform: translateY(-1px); }
@@ -61,7 +60,7 @@
   .btn[data-tip]:hover::after, .btn[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
   .spacer { flex: 1; }
 
-  /* ---- Catalogo ---- */
+  /* ---- Catalog ---- */
   #catalog { position: absolute; z-index: 6; left: 14px; top: 70px; width: min(460px, calc(100vw - 28px)); max-height: calc(100vh - 150px); display: flex; flex-direction: column; background: var(--cream); border: 4px solid #fff; border-radius: 26px; box-shadow: 0 8px 0 rgba(120,85,40,.25); transform-origin: 30px -10px; transition: transform .18s cubic-bezier(.3,1.6,.5,1), opacity .15s; }
   #catalog[hidden] { display: flex; opacity: 0; transform: scale(.85); pointer-events: none; visibility: hidden; }
   #catalog h2 { margin: 0; font-size: 16px; padding: 12px 16px 6px; display: flex; align-items: center; justify-content: space-between; }
@@ -74,7 +73,7 @@
   .card .ph { display: grid; place-items: center; font-size: 28px; opacity: .6; }
   .card span { font-size: 12.5px; }
 
-  /* ---- Nuovo agente ---- */
+  /* ---- New agent ---- */
   #spawn { position: absolute; z-index: 6; left: 14px; top: 70px; width: min(460px, calc(100vw - 28px)); max-height: calc(100vh - 150px); overflow: auto; background: var(--cream); border: 4px solid #fff; border-radius: 26px; box-shadow: 0 8px 0 rgba(120,85,40,.25); padding: 4px 16px 16px; animation: pop .2s cubic-bezier(.3,1.6,.5,1); }
   #spawn[hidden] { display: none; }
   #spawn h2 { margin: 0; font-size: 16px; padding: 10px 0 2px; display: flex; align-items: center; justify-content: space-between; }
@@ -87,7 +86,7 @@
   .locs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
   .chipbtn[aria-pressed="true"] { background: var(--leaf); border-color: var(--leaf); color: #fff; }
   .movebar { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
-  .movebar::before { content: 'Luogo'; color: var(--muted); font-size: 12px; width: 100%; }
+  .movebar::before { content: 'Location'; color: var(--muted); font-size: 12px; width: 100%; }
   .movebar .btn { padding: 4px 11px; font-size: 12.5px; }
   .badge { background: var(--berry); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; font-weight: 900; line-height: 1.5; box-shadow: 0 2px 0 rgba(0,0,0,.2); }
   .badge.ring { animation: ring 1s ease-in-out infinite; transform-origin: 50% 20%; }
@@ -105,7 +104,7 @@
   .sp-opt[aria-pressed="true"] { border-color: var(--leaf); background: #eaf8f0; box-shadow: 0 3px 0 var(--leaf-d); }
   .sp-opt img, .sp-opt .ph { width: 56px; height: 56px; object-fit: contain; display: grid; place-items: center; font-size: 26px; }
   .shirts { display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
-  .shirts::before { content: 'Divisa'; color: var(--muted); font-size: 12px; margin-right: 2px; }
+  .shirts::before { content: 'Uniform'; color: var(--muted); font-size: 12px; margin-right: 2px; }
   .dot { width: 24px; height: 24px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 2px var(--line); cursor: pointer; padding: 0; }
   .dot[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--ink); transform: scale(1.12); }
   .recent { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
@@ -118,8 +117,35 @@
   .dirs .none { color: var(--muted); padding: 8px 10px; font-size: 12.5px; }
   #spawn .go { width: 100%; justify-content: center; }
 
-  /* ---- Scheda agente ---- */
-  #card { position: absolute; z-index: 6; right: 14px; bottom: 62px; width: min(350px, calc(100vw - 28px)); background: var(--cream); border: 4px solid #fff; border-radius: 26px; padding: 14px 16px 12px; box-shadow: 0 8px 0 rgba(120,85,40,.25); animation: pop .22s cubic-bezier(.3,1.6,.5,1); }
+  /* ---- Statistics ---- */
+  #stats { position: absolute; z-index: 6; right: 14px; top: 70px; width: min(520px, calc(100vw - 28px)); max-height: calc(100vh - 150px); overflow: auto; background: var(--cream); border: 4px solid #fff; border-radius: 26px; box-shadow: 0 8px 0 rgba(120,85,40,.25); padding: 4px 16px 16px; animation: pop .2s cubic-bezier(.3,1.6,.5,1); }
+  #stats[hidden] { display: none; }
+  #stats h2 { margin: 0; font-size: 16px; padding: 10px 0 2px; display: flex; align-items: center; justify-content: space-between; }
+  #stats .tabs { padding: 4px 0 10px; }
+  #stats .none { color: var(--muted); font-size: 12.5px; padding: 8px 2px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .kpi { background: #fff; border: 3px solid var(--line); border-radius: 18px; padding: 6px 10px; }
+  .kpi b { display: block; font-size: 19px; font-weight: 900; }
+  .kpi span { color: var(--muted); font-size: 11.5px; }
+  .kpi small { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
+  #stats h3 { margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 90px; background: #fff; border: 3px solid var(--line); border-radius: 18px; padding: 8px 8px 4px; }
+  .bars .col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+  .bars .out { background: var(--berry); border-radius: 4px 4px 0 0; }
+  .bars .inp { background: var(--leaf); }
+  .bars .col:hover { filter: brightness(1.1); }
+  .legend { display: flex; gap: 12px; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .rows { background: #fff; border: 3px solid var(--line); border-radius: 18px; padding: 4px 10px; }
+  .rows .r { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 5px 0; font-size: 12.5px; }
+  .rows .r + .r { border-top: 2px solid var(--cream2); }
+  .rows .r .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rows .r .v { color: var(--muted); font-size: 12px; }
+  .rows .r .m { grid-column: 1 / -1; height: 6px; background: var(--cream2); border-radius: 999px; overflow: hidden; }
+  .rows .r .m i { display: block; height: 100%; background: var(--sky); border-radius: 999px; }
+
+  /* ---- Agent card ---- */
+  #card { position: absolute; z-index: 6; right: 14px; bottom: 62px; width: min(460px, calc(100vw - 28px)); max-height: calc(100vh - 150px); overflow-y: auto; background: var(--cream); border: 4px solid #fff; border-radius: 26px; padding: 14px 16px 12px; box-shadow: 0 8px 0 rgba(120,85,40,.25); animation: pop .22s cubic-bezier(.3,1.6,.5,1); }
   #card[hidden] { display: none; }
   @keyframes pop { from { transform: scale(.85) translateY(12px); opacity: 0; } }
   #card h2 { margin: 0; font-size: 17px; padding-right: 30px; }
@@ -133,9 +159,23 @@
   #card .note { color: var(--muted); font-size: 12px; margin-top: 8px; font-weight: 700; }
   #card .x { position: absolute; right: 10px; top: 10px; }
 
-  /* ---- Conversazione nella scheda ---- */
-  .chat { display: flex; flex-direction: column; gap: 6px; max-height: 210px; overflow: auto; margin: 0 0 10px; padding: 2px 2px 2px 0; scroll-behavior: smooth; }
-  .chat:empty::before { content: 'Ancora nessun messaggio: scrivi qualcosa a Claude!'; color: var(--muted); font-size: 12.5px; padding: 6px 4px; }
+  /* ---- Slash command suggestions ---- */
+  #cmdlist { max-height: 170px; overflow: auto; margin: 0 0 6px; background: #fff; border: 3px solid var(--line); border-radius: 18px; padding: 4px; }
+  #cmdlist[hidden] { display: none; }
+  #cmdlist button { display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 12px; padding: 4px 9px; font: inherit; font-size: 12.5px; }
+  #cmdlist button:hover, #cmdlist button[aria-selected="true"] { background: var(--cream2); }
+  #cmdlist b { font-weight: 900; white-space: nowrap; }
+  #cmdlist span { color: var(--muted); font-weight: 600; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #seatbar { position: absolute; z-index: 5; left: 50%; bottom: 62px; transform: translateX(-50%); animation: pop .2s cubic-bezier(.3,1.6,.5,1); }
+  #seatbar[hidden] { display: none; }
+  #askbar { position: absolute; z-index: 8; left: 50%; bottom: 62px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: var(--cream); border: 4px solid #fff; border-radius: 999px; padding: 6px 8px 6px 18px; box-shadow: 0 6px 0 rgba(20,30,70,.35); animation: pop .2s cubic-bezier(.3,1.6,.5,1); white-space: nowrap; }
+  #askbar[hidden] { display: none; }
+  #askbar .ok { background: var(--leaf); color: #fff; box-shadow: 0 3px 0 var(--leaf-d); }
+  @media (max-width: 720px) { #askbar { white-space: normal; border-radius: 22px; width: calc(100vw - 28px); flex-wrap: wrap; } }
+
+  /* ---- Conversation in the card ---- */
+  .chat { display: flex; flex-direction: column; gap: 6px; max-height: clamp(210px, 42vh, 420px); overflow: auto; margin: 0 0 10px; padding: 2px 2px 2px 0; scroll-behavior: smooth; }
+  .chat:empty::before { content: 'No messages yet: write something to Claude!'; color: var(--muted); font-size: 12.5px; padding: 6px 4px; }
   .msg { max-width: 92%; padding: 7px 12px; border-radius: 18px; border: 3px solid #fff; box-shadow: 0 2px 0 rgba(120,85,40,.16); font-weight: 700; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .msg.user { align-self: flex-end; background: var(--leaf); color: #fff; border-bottom-right-radius: 6px; }
   .msg.assistant { align-self: flex-start; background: #fff; border-color: var(--line); border-bottom-left-radius: 6px; font-weight: 600; }
@@ -146,7 +186,7 @@
   .dots::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4) infinite; }
   @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
 
-  /* ---- Richieste di permesso ---- */
+  /* ---- Permission requests ---- */
   #perm { position: absolute; z-index: 9; left: 50%; bottom: 62px; transform: translateX(-50%); width: min(520px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 10px; }
   .ask { background: var(--cream); border: 4px solid #fff; border-radius: 26px; padding: 12px 16px 12px; box-shadow: 0 8px 0 rgba(120,85,40,.28), 0 0 0 4px rgba(255,210,122,.65); animation: pop .22s cubic-bezier(.3,1.6,.5,1); position: relative; overflow: hidden; }
   .ask h3 { margin: 0 0 4px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
@@ -169,10 +209,17 @@
 
   footer { position: absolute; z-index: 4; left: 14px; right: 14px; bottom: 12px; display: flex; gap: 12px; align-items: center; pointer-events: none; }
   footer .pill { background: rgba(255,246,224,.92); border: 3px solid #fff; border-radius: 999px; padding: 4px 14px; font-size: 12.5px; box-shadow: var(--shadow); }
+  footer .pill.help { display: flex; gap: 10px; align-items: center; padding: 3px 12px; pointer-events: auto; }
+  .help .h { position: relative; display: inline-flex; gap: 2px; align-items: center; font-size: 15px; line-height: 1; cursor: default; border-radius: 8px; }
+  .help .h small { font-size: 12px; font-weight: 900; color: var(--muted); }
+  .help .sep { width: 2px; height: 16px; background: var(--line); border-radius: 2px; }
+  .help kbd { font: 800 11px/1 inherit; font-family: inherit; color: var(--ink); background: #fff; border: 2px solid var(--line); border-bottom-width: 3px; border-radius: 6px; padding: 2px 5px; min-width: 20px; text-align: center; }
+  .help .h[data-tip]::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translate(-50%, 4px); background: var(--ink); color: #fff6e0; border-radius: 10px; padding: 3px 9px; font: 700 12px/1.3 inherit; font-family: inherit; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; }
+  .help .h[data-tip]:hover::after, .help .h[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
   #conn::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--berry); margin-right: 7px; }
   #conn.ok::before { background: var(--leaf); }
 
-  /* ---- Etichette sopra gli agenti ---- */
+  /* ---- Labels above the agents ---- */
   .tag { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; transform: translate(-50%, -100%); will-change: transform; }
   .tag .name { background: var(--leaf); color: #fff; border: 3px solid #fff; border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(0,0,0,.2); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
   .tag.main .name { background: var(--berry); }
@@ -193,91 +240,117 @@
   #nogl div { background: var(--cream); border: 4px solid #fff; border-radius: 26px; padding: 24px 30px; box-shadow: var(--shadow); max-width: 440px; }
   #nogl a { color: var(--leaf-d); }
 
-  @media (max-width: 720px) { .brand span { display: none; } .btn .lbl { display: none; } #card { bottom: 56px; } }
+  @media (max-width: 720px) { .brand img { height: 40px; } .btn .lbl { display: none; } #card { bottom: 56px; } }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <div id="stage">
-  <canvas id="gl" aria-label="Spazio di lavoro 3D degli agenti" role="img"></canvas>
+  <canvas id="gl" aria-label="3D workspace of the agents" role="img"></canvas>
   <div id="labels"></div>
 
   <header>
-    <div class="brand"><img src="/favicon.svg" alt="" width="34" height="34"><span>Vibeship</span></div>
-    <div class="dock" id="scenes" role="group" aria-label="Scenario"></div>
+    <div class="brand"><img src="/icons/logo.svg" alt="Vibeship: your agents, in orbit" width="198" height="54"></div>
+    <div class="dock" id="scenes" role="group" aria-label="Scene"></div>
     <div class="dock">
-      <button class="btn" id="agent-btn" aria-expanded="false" aria-controls="spawn"><span class="ic">🐾</span><span class="lbl">Agente</span></button>
-      <button class="btn primary" id="add-btn" aria-expanded="false" aria-controls="catalog"><span class="ic">🛠️</span><span class="lbl">Aggiungi</span></button>
-      <button class="btn sq" id="rot" data-tip="Ruota (R)" aria-label="Ruota" disabled><span class="ic">↻</span></button>
-      <button class="btn sq danger" id="del" data-tip="Rimuovi (Canc)" aria-label="Rimuovi" disabled><span class="ic">🗑️</span></button>
-      <button class="btn sq" id="reset" data-tip="Ripristina scenario" aria-label="Ripristina scenario"><span class="ic">↺</span></button>
+      <button class="btn" id="agent-btn" aria-expanded="false" aria-controls="spawn"><span class="ic">🐾</span><span class="lbl">Agent</span></button>
+      <button class="btn" id="edit-btn" aria-pressed="false" data-tip="Edit mode: move, add and remove furniture"><span class="ic">✏️</span><span class="lbl">Edit</span></button>
+      <button class="btn primary" id="add-btn" aria-expanded="false" aria-controls="catalog"><span class="ic">🛠️</span><span class="lbl">Add</span></button>
+      <button class="btn sq" id="rot" data-tip="Rotate (R)" aria-label="Rotate" disabled><span class="ic">↻</span></button>
+      <button class="btn sq danger" id="del" data-tip="Remove (Del)" aria-label="Remove" disabled><span class="ic">🗑️</span></button>
+      <button class="btn sq" id="reset" data-tip="Reset scene" aria-label="Reset scene"><span class="ic">↺</span></button>
     </div>
     <div class="spacer"></div>
     <div class="dock">
-      <button class="btn sq" id="tod" data-tip="Luci della nave" aria-label="Luci della nave"><span class="ic">🛰️</span></button>
-      <button class="btn sq" id="snd" data-tip="Suoni" aria-label="Suoni" aria-pressed="false"><span class="ic">🔇</span></button>
+      <button class="btn sq" id="stats-btn" data-tip="Statistics" aria-label="Statistics" aria-expanded="false" aria-controls="stats"><span class="ic">📊</span></button>
+      <button class="btn sq" id="tod" data-tip="Ship lights" aria-label="Ship lights"><span class="ic">🛰️</span></button>
+      <button class="btn sq" id="snd" data-tip="Sounds" aria-label="Sounds" aria-pressed="false"><span class="ic">🔇</span></button>
     </div>
   </header>
 
-  <section id="catalog" hidden aria-label="Catalogo arredamento">
-    <h2><span>🛍️ Catalogo</span><button class="btn sq" id="cat-close" aria-label="Chiudi"><span class="ic">✕</span></button></h2>
+  <section id="catalog" hidden aria-label="Furniture catalog">
+    <h2><span>🛍️ Catalog</span><button class="btn sq" id="cat-close" aria-label="Close"><span class="ic">✕</span></button></h2>
     <div class="tabs" id="tabs" role="tablist"></div>
     <div class="grid" id="grid"></div>
   </section>
 
-  <section id="spawn" hidden aria-label="Nuovo agente">
-    <h2><span>🐾 Nuovo agente</span><button class="btn sq" id="sp-close" aria-label="Chiudi"><span class="ic">✕</span></button></h2>
-    <p class="hint">Apre un nuovo terminale con Claude Code in questa cartella. Quando parte, l'abitante entra nella stanza.</p>
-    <label class="fld">Nome (facoltativo)<input id="sp-name" maxlength="40" placeholder="es. backend" autocomplete="off"></label>
-    <form id="sp-form" class="fld">Cartella di lavoro
-      <span class="inline"><input id="sp-path" placeholder="C:\percorso\del\progetto" autocomplete="off" aria-label="Percorso della cartella"><button class="btn" type="submit">Vai</button></span>
+  <section id="spawn" hidden aria-label="New agent">
+    <h2><span>🐾 New agent</span><button class="btn sq" id="sp-close" aria-label="Close"><span class="ic">✕</span></button></h2>
+    <p class="hint">Opens a new terminal with Claude Code in this folder. When it starts, the resident enters the room.</p>
+    <label class="fld">Name (optional)<input id="sp-name" maxlength="40" placeholder="e.g. backend" autocomplete="off"></label>
+    <form id="sp-form" class="fld">Working folder
+      <span class="inline"><input id="sp-path" placeholder="C:\path\to\project" autocomplete="off" aria-label="Folder path"><button class="btn" type="submit">Go</button></span>
     </form>
-    <div class="fld" id="sp-loc">Luogo
-      <div class="locs" id="sp-locs" role="radiogroup" aria-label="Luogo dell'agente"></div>
+    <div class="fld" id="sp-loc">Location
+      <div class="locs" id="sp-locs" role="radiogroup" aria-label="Agent location"></div>
     </div>
-    <div class="fld" id="sp-look">Personaggio
-      <div class="species" id="sp-species" role="radiogroup" aria-label="Personaggio"></div>
-      <div class="shirts" id="sp-shirts" role="radiogroup" aria-label="Divisa dell'equipaggio"></div>
+    <div class="fld" id="sp-look">Character
+      <div class="species" id="sp-species" role="radiogroup" aria-label="Character"></div>
+      <div class="shirts" id="sp-shirts" role="radiogroup" aria-label="Crew uniform"></div>
     </div>
-    <div class="recent" id="sp-recent" aria-label="Cartelle recenti"></div>
+    <div class="recent" id="sp-recent" aria-label="Recent folders"></div>
     <div class="dirs" id="sp-dirs" role="list"></div>
     <div class="newproj">
-      <button type="button" class="btn" id="np-toggle" aria-expanded="false"><span class="ic">📁</span> Nuovo progetto in questa cartella</button>
+      <button type="button" class="btn" id="np-toggle" aria-expanded="false"><span class="ic">📁</span> New project in this folder</button>
       <form id="np-form" hidden autocomplete="off">
-        <input id="np-name" maxlength="64" placeholder="Nome del nuovo progetto" aria-label="Nome del nuovo progetto">
-        <label class="chk"><input type="checkbox" id="np-git" checked> Inizializza git</label>
-        <button class="btn primary" type="submit">Crea</button>
+        <input id="np-name" maxlength="64" placeholder="New project name" aria-label="New project name">
+        <label class="chk"><input type="checkbox" id="np-git" checked> Initialize git</label>
+        <button class="btn primary" type="submit">Create</button>
       </form>
     </div>
-    <button class="btn primary go" id="sp-go">🚀 Avvia agente</button>
+    <button class="btn primary go" id="sp-go">🚀 Launch agent</button>
   </section>
 
-  <div id="card" hidden role="dialog" aria-label="Scheda agente">
-    <button class="btn sq x" id="card-close" aria-label="Chiudi"><span class="ic">✕</span></button>
+  <section id="stats" hidden aria-label="Statistics">
+    <h2><span>📊 Statistics</span><button class="btn sq" id="st-close" aria-label="Close"><span class="ic">✕</span></button></h2>
+    <div class="tabs" id="st-range" role="group" aria-label="Period">
+      <button class="btn" data-days="7" aria-pressed="false">7 days</button>
+      <button class="btn" data-days="14" aria-pressed="true">14 days</button>
+      <button class="btn" data-days="30" aria-pressed="false">30 days</button>
+    </div>
+    <div id="st-body"></div>
+  </section>
+
+  <div id="card" hidden role="dialog" aria-label="Agent card">
+    <button class="btn sq x" id="card-close" aria-label="Close"><span class="ic">✕</span></button>
     <h2 id="card-name"></h2>
     <div class="sp" id="card-sp"></div>
     <div class="st"><span class="big" id="card-ic"></span><span id="card-st"></span></div>
-    <div class="chat" id="chat" aria-live="polite" aria-label="Conversazione"></div>
+    <div class="chat" id="chat" aria-live="polite" aria-label="Conversation"></div>
+    <div id="cmdlist" role="listbox" aria-label="Slash commands" hidden></div>
     <form id="card-form" autocomplete="off">
-      <input id="card-text" placeholder="Scrivi a Claude…" maxlength="2000" aria-label="Messaggio per Claude">
-      <button class="btn primary" type="submit">Invia</button>
+      <input id="card-text" placeholder="Message, or / for commands" maxlength="2000" aria-label="Message for Claude">
+      <button class="btn primary" type="submit">Send</button>
     </form>
-    <div class="movebar" id="card-move" role="group" aria-label="Sposta in un altro luogo"></div>
-    <div class="row"><button class="btn danger" id="card-stop" type="button">✋ Ferma il lavoro</button><button class="btn danger" id="card-end" type="button">🚪 Chiudi agente</button></div>
+    <div class="movebar" id="card-move" role="group" aria-label="Move to another location"></div>
+    <div class="row"><button class="btn danger" id="card-stop" type="button">✋ Stop work</button><button class="btn danger" id="card-end" type="button">🚪 Close agent</button></div>
     <div class="note" id="card-note"></div>
   </div>
+
+  <div id="seatbar" hidden><button class="btn primary" id="seat-add" type="button"><span class="ic">🐾</span> Add an agent at this station</button></div>
+
+  <div id="askbar" role="alertdialog" aria-live="polite" hidden><span id="ask-text"></span><button class="btn ok" id="ask-yes" type="button">✓ Confirm</button><button class="btn" id="ask-no" type="button">✕ Cancel</button></div>
 
   <div id="perm" aria-live="assertive"></div>
   <div id="tip" role="tooltip"></div>
   <div id="toast" role="status"></div>
 
   <footer>
-    <span class="pill" id="conn">in attesa del server…</span>
+    <span class="pill" id="conn">waiting for the server…</span>
     <span class="pill" id="count"></span>
-    <span class="pill">Trascina per spostare · tasto destro: ruota vista · rotella: zoom · R ruota · Canc rimuove</span>
+    <span class="pill help" role="group" aria-label="Controls">
+      <span class="h" tabindex="0" data-tip="Click: select" aria-label="Click: select">👆</span>
+      <span class="h" tabindex="0" data-tip="Edit mode: drag to move" aria-label="Edit mode: drag to move">✋</span>
+      <span class="h" tabindex="0" data-tip="Right click + drag: rotate view" aria-label="Right click and drag: rotate view">🖱️<small>↻</small></span>
+      <span class="h" tabindex="0" data-tip="Wheel: zoom" aria-label="Wheel: zoom">🔍</span>
+      <span class="sep"></span>
+      <span class="h" tabindex="0" data-tip="Move the view" aria-label="W A S D: move the view"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>
+      <span class="h" tabindex="0" data-tip="Rotate selected (edit mode)" aria-label="R: rotate selected"><kbd>R</kbd></span>
+      <span class="h" tabindex="0" data-tip="Remove selected (edit mode)" aria-label="Delete: remove selected"><kbd>Del</kbd></span>
+    </span>
   </footer>
 
-  <div id="nogl" hidden><div><h2>WebGL non disponibile</h2><p>Il tuo browser non riesce ad avviare la grafica 3D.</p><p><a href="/legacy.html">Apri la versione 2D</a></p></div></div>
+  <div id="nogl" hidden><div><h2>WebGL not available</h2><p>Your browser cannot start the 3D graphics.</p><p><a href="/legacy.html">Open the 2D version</a></p></div></div>
 </div>
 <script type="module" src="/js/main.js"></script>
 </body>

@@ -1,4 +1,4 @@
-// Suoni sintetizzati (nessun file audio). Partono solo dopo un gesto dell'utente e si possono spegnere.
+// Synthesized sounds (no audio files). They start only after a user gesture and can be muted.
 let ctx = null
 let muted = true
 try { muted = localStorage.getItem('ao-muted') !== '0' } catch {}

@@ -31,5 +31,5 @@
   </g>
   <!-- scritta -->
   <text x="270" y="150" font-family="'Trebuchet MS','Segoe UI Rounded','Varela Round',system-ui,sans-serif" font-size="128" font-weight="900" letter-spacing="-2" fill="url(#word)">Vibeship</text>
-  <text x="274" y="196" font-family="'Trebuchet MS','Segoe UI Rounded',system-ui,sans-serif" font-size="30" font-weight="700" letter-spacing="3" fill="#8d9bd0">I TUOI AGENTI, IN ORBITA</text>
+  <text x="274" y="196" font-family="'Trebuchet MS','Segoe UI Rounded',system-ui,sans-serif" font-size="30" font-weight="700" letter-spacing="3" fill="#8d9bd0">YOUR AGENTS, IN ORBIT</text>
 </svg>

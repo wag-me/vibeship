@@ -41,7 +41,10 @@ if (!TOKEN) {
 }
 const queues = new Map() // session -> [command]
 const chat = new Map() // session -> [messages]  { id, role:'user'|'assistant', text, state, via, ts }
+const infos = new Map() // session -> { model } what the session is running with
 const cmds = new Map() // session -> [{ name, description }] slash commands of that session
+const roots = new Map() // session -> working folder (what the Files panel may browse); never sent to the window
+const acts = new Map() // session -> [finished actions] { id, ts, agent, tool, kind, ok, summary, file?, add?, del?, error? }
 const perms = new Map() // id -> pending permission request
 const permWaiters = new Map() // id -> [{ res, timer }]
 const rid = () => crypto.randomBytes(6).toString('hex')
@@ -60,7 +63,10 @@ function snapshot() {
   const c = {}
   for (const [k, v] of chat) c[k] = v.slice(-25)
   const list = [...agents.values()].map((a) => (a.kind === 'main' ? a : { ...a, loc: agents.get(a.session + ':main')?.loc }))
-  return JSON.stringify({ agents: list, layout, chat: c, perms: [...perms.values()] })
+  const a = {}
+  for (const [k, v] of acts) a[k] = v.slice(-30)
+  const files = Object.fromEntries([...roots].map(([k, v]) => [k, path.basename(v) || v]))
+  return JSON.stringify({ agents: list, layout, chat: c, perms: [...perms.values()], acts: a, roots: files, info: Object.fromEntries(infos) })
 }
 function broadcast() {
   const data = 'data: ' + snapshot() + '\n\n'
@@ -79,6 +85,8 @@ function uniqueName(base, key) {
   if (!taken.has(base)) return base
   for (let n = 2; ; n++) if (!taken.has(base + ' #' + n)) return base + ' #' + n
 }
+// A name chosen by the person: letters, numbers, spaces and a few symbols, up to 40 characters
+const cleanName = (v) => String(v ?? '').replace(/[^\p{L}\p{N} _.\-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40)
 const SPECIES = ['fox', 'cat', 'dog', 'raccoon', 'rabbit', 'bear', 'bird']
 // Ship locations: each agent is in one, subagents follow the location of their main agent
 const LOCS = ['bridge', 'engine', 'habitat']
@@ -134,15 +142,40 @@ function handleEvent(ev) {
   switch (ev.type) {
     case 'session_start':
       mainOf(session, ev.label, ev.look, ev.loc)
+      if (typeof ev.cwd === 'string' && path.isAbsolute(ev.cwd)) roots.set(session, path.resolve(ev.cwd))
       break
+    case 'activity': {
+      const a = resolve(session, ev.agentId)
+      const n = (x) => (Number.isFinite(x) ? Math.max(0, Math.min(1e6, Math.floor(x))) : undefined)
+      const list = acts.get(session) || []
+      // the window only needs the path inside the working folder (that is also what the Files panel opens)
+      let rel
+      const root = roots.get(session)
+      if (root && typeof ev.file === 'string') {
+        const r = path.relative(root, path.resolve(root, ev.file))
+        if (r && !r.startsWith('..') && !path.isAbsolute(r)) rel = r.split(path.sep).join('/')
+      }
+      list.push({ id: rid(), ts: now, agent: a.name, tool: String(ev.tool || '').slice(0, 40), kind: ['read', 'write', 'run', 'web', 'delegate'].includes(ev.kind) ? ev.kind : 'run', ok: ev.ok !== false, summary: String(ev.summary || '').slice(0, 160), rel, add: n(ev.add), del: n(ev.del), error: ev.error ? String(ev.error).slice(0, 160) : undefined })
+      acts.set(session, list.slice(-60))
+      break
+    }
     case 'session_end':
       for (const [k, a] of agents) if (a.session === session) agents.delete(k)
       chat.delete(session)
       cmds.delete(session)
+      infos.delete(session)
+      acts.delete(session)
+      roots.delete(session)
       for (const [id, p] of perms) if (p.session === session) endPerm(id)
       break
     case 'prompt_in': // message typed in the terminal
       if (typeof ev.text === 'string' && ev.text.trim()) addChat(session, { role: 'user', text: ev.text.slice(0, 4000), state: 'working', via: 'terminal' })
+      break
+    case 'info': // what the session runs with (the model), shown under the chat
+      if (typeof ev.model === 'string') infos.set(session, { ...(infos.get(session) || {}), model: ev.model.slice(0, 80) })
+      break
+    case 'info_error':
+      addChat(session, { role: 'assistant', text: String(ev.text || 'The change was refused.').slice(0, 300), state: 'error' })
       break
     case 'commands':
       if (Array.isArray(ev.list)) cmds.set(session, ev.list.filter((c) => c && typeof c.name === 'string').slice(0, 500).map((c) => ({ name: c.name.slice(0, 80), description: String(c.description || '').slice(0, 120) })))
@@ -247,6 +280,47 @@ function listDirs(p) {
   const up = path.dirname(full)
   return { path: full, parent: up !== full ? up : WIN ? '' : null, dirs: ents.map((n) => ({ name: n, path: path.join(full, n) })), home, recent }
 }
+// ---------- Files panel: browse and read the working folder of a session ----------
+// Everything is resolved against the session's folder (symlinks included): nothing outside it can be listed or read.
+const HIDE_DIRS = new Set(['node_modules', '.git'])
+const SECRET = /^(\.env(\..*)?|\.npmrc|\.netrc|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|credentials|.*\.(pem|key|p12|pfx|kdbx))$/i
+const MAX_FILE = 256 * 1024
+function inRoot(session, p) {
+  const root = roots.get(session)
+  if (!root) throw new Error('This agent has no working folder yet: type /vibeship in its session')
+  const realRoot = fs.realpathSync(root)
+  const real = fs.realpathSync(path.resolve(realRoot, String(p || '.')))
+  const rel = path.relative(realRoot, real)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('Outside the working folder')
+  return { real, rel: rel.split(path.sep).join('/') }
+}
+function listFiles(session, p) {
+  const { real, rel } = inRoot(session, p)
+  const ents = fs.readdirSync(real, { withFileTypes: true }).filter((e) => !(e.isDirectory() && HIDE_DIRS.has(e.name)))
+  const out = []
+  for (const e of ents.slice(0, 2000)) {
+    let st = null
+    try { st = fs.statSync(path.join(real, e.name)) } catch { continue }
+    out.push({ name: e.name, dir: st.isDirectory(), size: st.isDirectory() ? 0 : st.size, mtime: st.mtimeMs })
+  }
+  out.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name, 'en') : a.dir ? -1 : 1))
+  return { rel, name: path.basename(real), entries: out.slice(0, 500), more: out.length > 500 }
+}
+function readFile(session, p) {
+  const { real, rel } = inRoot(session, p)
+  const st = fs.statSync(real)
+  if (!st.isFile()) throw new Error('Not a file')
+  const name = path.basename(real)
+  if (SECRET.test(name)) return { rel, name, size: st.size, blocked: 'Hidden on purpose: this kind of file often holds secrets.' }
+  const fd = fs.openSync(real, 'r')
+  try {
+    const buf = Buffer.alloc(Math.min(st.size, MAX_FILE))
+    fs.readSync(fd, buf, 0, buf.length, 0)
+    if (buf.includes(0)) return { rel, name, size: st.size, blocked: 'Binary file: preview not available.' }
+    return { rel, name, size: st.size, truncated: st.size > MAX_FILE, text: buf.toString('utf8') }
+  } finally { fs.closeSync(fd) }
+}
+
 // Creates a new project folder inside `parent` (with optional git init).
 // The name must be a plain folder name: no paths, no reserved Windows names.
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
@@ -458,6 +532,9 @@ function readBody(req, cb) {
   })
 }
 
+// uploaded files older than a week are removed
+try { const d = path.join(DATA_DIR, 'uploads'); for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (Date.now() - fs.statSync(p).mtimeMs > 7 * 864e5) fs.unlinkSync(p) } } catch {}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1')
 
@@ -485,12 +562,13 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/command') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     return readBody(req, (c) => {
-      const ok = c && typeof c.session === 'string' && ['say', 'stop', 'close', 'commands'].includes(c.kind) && (c.kind !== 'say' || (typeof c.text === 'string' && c.text.trim()))
+      const ok = c && typeof c.session === 'string' && ['say', 'stop', 'close', 'commands', 'model', 'rename'].includes(c.kind) && (c.kind !== 'say' || (typeof c.text === 'string' && c.text.trim())) && (c.kind !== 'model' || (typeof c.value === 'string' && /^[a-z0-9.\[\]-]{1,30}$/.test(c.value))) && (c.kind !== 'rename' || (typeof c.value === 'string' && cleanName(c.value) && agents.has(c.session + ':main')))
       if (ok) {
         const q = queues.get(c.session) || []
         let id
         if (c.kind === 'say') id = addChat(c.session, { role: 'user', text: c.text.trim().slice(0, 4000), state: 'queued', via: 'window' }).id
-        q.push({ kind: c.kind, id, text: c.kind === 'say' ? c.text.trim().slice(0, 4000) : undefined })
+        if (c.kind === 'rename') { c.value = cleanName(c.value); const a = agents.get(c.session + ':main'); a.name = uniqueName(c.value, a.key) }
+        q.push({ kind: c.kind, id, text: c.kind === 'say' ? c.text.trim().slice(0, 4000) : undefined, value: c.kind === 'model' || c.kind === 'rename' ? c.value : undefined })
         queues.set(c.session, q.slice(-20))
         if (c.kind === 'close') {
           // if the session does not respond within a few seconds, remove it from the window anyway
@@ -502,6 +580,27 @@ const server = http.createServer((req, res) => {
       res.writeHead(ok ? 204 : 400)
       res.end()
     })
+  }
+  if (req.method === 'POST' && url.pathname === '/api/upload') {
+    if (!authed(req)) { res.writeHead(401); return res.end() }
+    // a file picked in the window is saved in the data folder, so the agent can read it by path (up to 8 MB each)
+    let body = '', tooBig = false
+    req.on('data', (c) => { body += c; if (body.length > 12e6) { tooBig = true; req.destroy() } })
+    req.on('end', () => {
+      if (tooBig) return
+      try {
+        const b = JSON.parse(body)
+        const buf = Buffer.from(String(b.data || ''), 'base64')
+        if (!buf.length || buf.length > 8 * 1024 * 1024) throw new Error('A file must be between 1 byte and 8 MB')
+        const safe = path.basename(String(b.name || 'file')).replace(/[^\p{L}\p{N} ._-]/gu, '_').slice(-80) || 'file'
+        const dir = path.join(DATA_DIR, 'uploads')
+        fs.mkdirSync(dir, { recursive: true })
+        const file = path.join(dir, rid() + '-' + safe)
+        fs.writeFileSync(file, buf)
+        json(res, { path: file, name: safe, size: buf.length })
+      } catch (e) { json(res, { error: e.message || 'Upload failed' }, 400) }
+    })
+    return
   }
   if (req.method === 'GET' && url.pathname === '/api/commands') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
@@ -523,6 +622,13 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/dirs') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     try { return json(res, listDirs(url.searchParams.get('path') || '')) } catch (e) { return json(res, { error: 'Folder not readable' }, 400) }
+  }
+  if (req.method === 'GET' && (url.pathname === '/api/files' || url.pathname === '/api/file')) {
+    if (!authed(req)) { res.writeHead(401); return res.end() }
+    try {
+      const s = url.searchParams.get('session') || '', p = url.searchParams.get('path') || ''
+      return json(res, url.pathname === '/api/files' ? listFiles(s, p) : readFile(s, p))
+    } catch (e) { return json(res, { error: e.code === 'ENOENT' ? 'Not found' : e.message || 'Not readable' }, 400) }
   }
   if (req.method === 'POST' && url.pathname === '/api/mkdir') {
     if (!authed(req)) { res.writeHead(401); return res.end() }

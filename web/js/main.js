@@ -5,6 +5,7 @@ import { CATALOG, CATEGORIES, catalogFor, buildModel, buildPad } from './models.
 import { createCharacter, SPECIES, SPECIES_IDS, SHIRTS, OUTFITS } from './characters.js'
 import { createFx } from './fx.js'
 import { sfx, isMuted, setMuted } from './audio.js'
+import { renderMarkdown, plainText } from './markdown.js'
 
 const $ = (id) => document.getElementById(id)
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
@@ -285,7 +286,7 @@ function onAgents(list) {
       ag.wasDone = true
       if (a.result) ag.gotResult = true
       if (ag.loc === sceneName) {
-        const txt = (a.result || '').trim()
+        const txt = plainText(a.result || '')
         say(ag, txt ? '✔ ' + (txt.length > 130 ? txt.slice(0, 127) + '…' : txt) : '✔ Mission accomplished!', 9000)
         if (first) {
           ag.cheerUntil = now + 2600
@@ -1285,13 +1286,14 @@ function toggleStats(open) {
   const willOpen = open ?? el.hidden
   el.hidden = !willOpen
   $('stats-btn').setAttribute('aria-expanded', String(willOpen))
-  if (willOpen) { toggleCatalog(false); toggleSpawn(false); sfx.click(); loadStats() }
+  if (willOpen) { toggleCatalog(false); toggleSpawn(false); toggleFiles(false); sfx.click(); loadStats() }
 }
 $('stats-btn').onclick = () => toggleStats()
 // any other button in the top bar closes the statistics panel
 document.querySelector('header').addEventListener('click', (e) => {
   const b = e.target.closest('button')
   if (b && b.id !== 'stats-btn') toggleStats(false)
+  if (b) toggleFiles(false)
 })
 $('st-close').onclick = () => toggleStats(false)
 $('st-range').onclick = (e) => {
@@ -1471,12 +1473,17 @@ function updateCard(focus) {
   if (!ag) { closeCard(); return }
   const a = ag.data
   const st = STATUS[a.status] ?? STATUS.idle
-  $('card-name').textContent = a.name
+  if (!renaming) $('card-name').textContent = a.name
+  $('card-rename').style.display = a.kind === 'main' ? '' : 'none'
   $('card-sp').textContent = (SPECIES[ag.species]?.label ?? '') + ' · ' + (ag.char.outfit?.name ?? '') + (a.kind === 'main' ? ' · main assistant' : ' · subagent')
   $('card-ic').textContent = st.icon
   $('card-st').textContent = st.text + (a.detail ? ' · ' + a.detail : '')
   const isMain = a.kind === 'main'
   $('card-form').style.display = isMain ? '' : 'none'
+  $('cbar').style.display = isMain ? '' : 'none'
+  $('atts').style.display = isMain ? '' : 'none'
+  if (!isMain) $('cmenu').hidden = true
+  updateModelChip()
   $('card-stop').style.display = isMain ? '' : 'none'
   $('card-end').style.display = isMain ? '' : 'none'
   $('card-note').textContent = isMain
@@ -1491,9 +1498,117 @@ function updateCard(focus) {
     b.onclick = () => { if (s.id !== ag.loc) sendMove(ag, s.id) }
     return b
   }))
+  $('card-files').style.display = isMain ? '' : 'none'
+  actsSig = ''
+  renderActs()
   renderChat(!!focus)
   if (focus && isMain) $('card-text').focus({ preventScroll: true })
 }
+// ---------- Activity feed + Files panel ----------
+let actsData = {} // session -> finished actions (from the server)
+let roots = {} // session -> name of the working folder
+const ACT_ICON = { read: '📄', write: '✏️', run: '▶️', web: '🌐', delegate: '🛰️' }
+const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e }
+const fmtSize = (n) => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB')
+const fmtAgo = (ts) => { const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); return s < 60 ? s + 's' : s < 3600 ? Math.round(s / 60) + 'm' : Math.round(s / 3600) + 'h' }
+
+let actsSig = ''
+function renderActs() {
+  const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
+  const box = $('acts-box')
+  if (!ag || ag.data.kind !== 'main') { box.hidden = true; actsSig = ''; return }
+  box.hidden = false
+  const list = (actsData[ag.data.session] ?? []).slice(-25).reverse()
+  const sig = ag.key + '|' + list.map((a) => a.id).join(',')
+  if (sig === actsSig) return
+  actsSig = sig
+  if (!list.length) { $('acts').replaceChildren(mk('div', 'none', 'Nothing yet: actions show up here as Claude finishes them.')); return }
+  $('acts').replaceChildren(...list.map((a) => {
+    const row = mk(a.rel && a.kind !== 'run' ? 'button' : 'div', 'act' + (a.ok ? '' : ' bad'))
+    if (row.tagName === 'BUTTON') { row.type = 'button'; row.title = 'Open ' + a.rel; row.onclick = () => openFiles(ag.data.session, a.rel, true) }
+    row.appendChild(mk('span', '', a.ok ? ACT_ICON[a.kind] ?? '▶️' : '⚠️'))
+    row.appendChild(mk('span', 's', (a.agent && a.agent !== ag.data.name ? a.agent + ' · ' : '') + (a.rel ?? a.summary) + (a.ok ? '' : ' — ' + (a.error || 'failed'))))
+    if (a.add) row.appendChild(mk('span', 'plus', '+' + a.add))
+    if (a.del) row.appendChild(mk('span', 'minus', '−' + a.del))
+    row.appendChild(mk('small', '', fmtAgo(a.ts)))
+    return row
+  }))
+}
+setInterval(() => { actsSig = ''; if (!$('card').hidden) renderActs() }, 15000) // keeps the "2m ago" labels fresh
+
+let fl = { session: null, rel: '', file: null }
+async function flGet(kind, session, rel) {
+  const r = await fetch('/api/' + kind + '?session=' + encodeURIComponent(session) + '&path=' + encodeURIComponent(rel), { headers: { 'x-token': TOKEN } })
+  const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(r.status === 401 ? 'Window no longer authorized: close it and run /vibeship again' : d.error || 'Not available')
+  return d
+}
+function flCrumbs() {
+  const parts = fl.rel ? fl.rel.split('/') : []
+  const root = mk('button', '', '📁 ' + (roots[fl.session] ?? 'project'))
+  root.type = 'button'; root.onclick = () => openFiles(fl.session, '')
+  const out = [root]
+  parts.forEach((p, i) => {
+    out.push(mk('span', '', '/'))
+    const b = mk('button', '', p); b.type = 'button'
+    const target = parts.slice(0, i + 1).join('/')
+    b.onclick = () => openFiles(fl.session, target)
+    out.push(b)
+  })
+  $('fl-crumbs').replaceChildren(...out)
+}
+async function openFiles(session, rel, asFile) {
+  if (!TOKEN) { toast('Open the window with /vibeship to browse files'); return }
+  toggleFiles(true, true)
+  fl.session = session
+  const hot = new Map()
+  for (const a of actsData[session] ?? []) if (a.rel && (a.kind === 'write' || a.kind === 'read')) hot.set(a.rel, a.kind === 'write' || hot.get(a.rel) === 'write' ? 'write' : 'read')
+  try {
+    if (asFile) {
+      const f = await flGet('file', session, rel)
+      fl.rel = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
+      flCrumbs()
+      $('fl-list').hidden = true; $('fl-view').hidden = false
+      $('fv-name').textContent = f.name
+      $('fv-meta').textContent = fmtSize(f.size) + (f.truncated ? ' · showing the first 256 KB' : '')
+      $('fv-text').textContent = f.blocked ?? f.text
+      $('fv-text').scrollTop = 0
+      $('fv-back').onclick = () => openFiles(session, fl.rel)
+      return
+    }
+    const d = await flGet('files', session, rel)
+    fl.rel = d.rel === '.' ? '' : d.rel
+    flCrumbs()
+    $('fl-view').hidden = true; $('fl-list').hidden = false
+    const rows = d.entries.map((e) => {
+      const p = (fl.rel ? fl.rel + '/' : '') + e.name
+      const b = mk('button', hot.has(p) && !e.dir ? 'hot' : '')
+      b.type = 'button'
+      b.appendChild(mk('span', '', e.dir ? '📁' : '📄'))
+      b.appendChild(mk('span', 'nm', e.name))
+      if (hot.get(p)) b.appendChild(mk('small', 'tag', hot.get(p) === 'write' ? 'changed' : 'read'))
+      if (!e.dir) b.appendChild(mk('small', '', fmtSize(e.size)))
+      b.onclick = () => openFiles(session, p, !e.dir)
+      return b
+    })
+    $('fl-list').replaceChildren(...(rows.length ? rows : [mk('div', 'none', 'Empty folder')]), ...(d.more ? [mk('div', 'none', 'Showing the first 500 items')] : []))
+  } catch (e) {
+    $('fl-list').hidden = false; $('fl-view').hidden = true
+    $('fl-list').replaceChildren(mk('div', 'none', e.message))
+  }
+}
+function toggleFiles(open, keep) {
+  const el = $('files')
+  const willOpen = open ?? el.hidden
+  el.hidden = !willOpen
+  if (willOpen) { toggleCatalog(false); toggleSpawn(false); toggleStats(false); if (!keep) sfx.click() }
+}
+$('fl-close').onclick = () => toggleFiles(false)
+$('card-files').onclick = () => {
+  const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
+  if (ag?.data.kind === 'main') openFiles(ag.data.session, '')
+}
+
 async function sendCommand(kind, text) {
   const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
   if (!ag) return
@@ -1525,13 +1640,170 @@ $('card-end').onclick = () => {
 $('card-form').onsubmit = (ev) => {
   ev.preventDefault()
   const inp = $('card-text')
-  const text = inp.value.trim()
-  if (!text) return
+  let text = inp.value.trim()
+  if (!text && !atts.length && !webOn) return
   if (/^\/model\s*$/i.test(text)) { inp.value = ''; showModelPicker(); return } // the terminal selector cannot be shown here: pick in the window instead
+  text = composeMessage(text)
   sendCommand('say', text)
   inp.value = ''
+  atts = []; webOn = false; renderAtts()
   $('cmdlist').hidden = true
+  $('cmenu').hidden = true
 }
+
+// ---- Rename the selected agent ----
+let renaming = false
+async function sendRename(name) {
+  const s = selSession()
+  if (!s) return
+  if (!TOKEN) { toast('Open the window with /vibeship to rename agents'); return }
+  try {
+    const r = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: s, kind: 'rename', value: name }) })
+    if (!r.ok) toast('That name is not valid')
+    else sfx.place()
+  } catch { toast('Server unreachable') }
+}
+function startRename() {
+  const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
+  if (!ag || ag.data.kind !== 'main' || renaming) return
+  renaming = true
+  const h = $('card-name'), old = ag.data.name
+  const inp = document.createElement('input')
+  inp.maxLength = 40
+  inp.value = old.replace(/ #\d+$/, '')
+  inp.setAttribute('aria-label', 'Agent name')
+  h.replaceChildren(inp)
+  inp.focus(); inp.select()
+  let done = false
+  const finish = (save) => {
+    if (done) return
+    done = true
+    renaming = false
+    const v = inp.value.trim()
+    if (save && v && v !== old.replace(/ #\d+$/, '')) sendRename(v)
+    updateCard()
+  }
+  inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(true) } else if (e.key === 'Escape') { e.stopPropagation(); finish(false) } }
+  inp.onblur = () => finish(true)
+}
+$('card-rename').onclick = startRename
+$('card-name').ondblclick = startRename
+
+// ---- Toolbar under the chat input: attachments, commands, and the model in use ----
+let infoData = {} // session -> { model }
+let atts = [] // { kind: 'file', name, path } uploaded from the computer | { kind: 'ctx', rel } a project file
+let webOn = false // "Browse the web" is added to the message
+const selSession = () => (selected?.kind === 'agent' ? agents.get(selected.key)?.data.session : null)
+function friendlyModel(id) {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[.*\])?$/.exec(String(id || ''))
+  return m ? m[1][0].toUpperCase() + m[1].slice(1) + ' ' + m[2] + (m[3] ? '.' + m[3] : '') + (m[4] ?? '') : String(id || '')
+}
+function updateModelChip() {
+  const s = selSession()
+  const id = s ? infoData[s]?.model : ''
+  $('cb-model').hidden = !id
+  $('cb-model-name').textContent = friendlyModel(id)
+  $('cb-model').title = id || ''
+}
+async function sendModel(id) {
+  const s = selSession()
+  if (!s) return
+  if (!TOKEN) { toast('Open the window with /vibeship to switch model'); return }
+  try {
+    const r = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: s, kind: 'model', value: id }) })
+    if (!r.ok) toast('Invalid model')
+    else { sfx.click(); toast('Switching to ' + id + '…') }
+  } catch { toast('Server unreachable') }
+}
+function composeMessage(text) {
+  if (text.startsWith('/')) return text // a command must stay exactly as typed
+  const files = atts.filter((a) => a.kind === 'file'), ctx = atts.filter((a) => a.kind === 'ctx')
+  let out = (webOn ? 'Browse the web if it helps. ' : '') + (text || 'Please look at what I attached.')
+  if (files.length) out += '\n\nAttached files (read them with the Read tool):\n' + files.map((f) => '- ' + f.path).join('\n')
+  if (ctx.length) out += '\n\nContext files in the project:\n' + ctx.map((c) => '- ' + c.rel).join('\n')
+  return out
+}
+function renderAtts() {
+  const box = $('atts')
+  const chip = (label, title, onRemove) => {
+    const c = document.createElement('span'); c.className = 'chip2'; c.title = title
+    const t = document.createElement('span'); t.textContent = label
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'Remove ' + label); x.onclick = onRemove
+    c.append(t, x)
+    return c
+  }
+  const chips = atts.map((a, i) => chip((a.kind === 'file' ? '📎 ' : '📄 ') + (a.name ?? a.rel), a.path ?? a.rel, () => { atts.splice(i, 1); renderAtts() }))
+  if (webOn) chips.push(chip('🌐 Browse the web', 'Claude may search the web for this message', () => { webOn = false; renderAtts() }))
+  box.replaceChildren(...chips)
+  box.hidden = !chips.length
+}
+async function uploadFiles(files) {
+  const s = selSession()
+  if (!s || !files.length) return
+  if (!TOKEN) { toast('Open the window with /vibeship to attach files'); return }
+  for (const f of files) {
+    if (f.size > 8 * 1024 * 1024) { toast(f.name + ' is bigger than 8 MB'); continue }
+    try {
+      const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] ?? ''); fr.onerror = rej; fr.readAsDataURL(f) })
+      const r = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: s, name: f.name, data }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { toast(d.error || 'Upload failed'); continue }
+      atts.push({ kind: 'file', name: d.name, path: d.path })
+      renderAtts()
+    } catch { toast('Upload failed') }
+  }
+  sfx.place()
+}
+// pick a project file to add as context (browse folders with the same API as the Files panel)
+async function showContextPicker(rel = '') {
+  const s = selSession()
+  const box = $('cmdlist')
+  if (!s) return
+  if (!TOKEN) { toast('Open the window with /vibeship to add context'); return }
+  try {
+    const d = await flGet('files', s, rel)
+    const here = d.rel === '.' ? '' : d.rel
+    const row = (icon, label, onPick) => { const b = document.createElement('button'); b.type = 'button'; const n = document.createElement('b'); n.textContent = icon + ' ' + label; b.append(n); b.onmousedown = (e) => { e.preventDefault(); onPick() }; return b }
+    const head = document.createElement('div')
+    head.textContent = 'Add context: ' + (here || 'project root')
+    head.style.cssText = 'font-size:11.5px;color:var(--muted);padding:2px 9px 4px'
+    const rows = []
+    if (here) rows.push(row('⬆️', '..', () => showContextPicker(here.includes('/') ? here.slice(0, here.lastIndexOf('/')) : '')))
+    for (const e of d.entries) {
+      const p = (here ? here + '/' : '') + e.name
+      rows.push(e.dir ? row('📁', e.name, () => showContextPicker(p)) : row('📄', e.name, () => {
+        if (!atts.some((a) => a.kind === 'ctx' && a.rel === p)) atts.push({ kind: 'ctx', rel: p })
+        renderAtts(); box.hidden = true; sfx.place(); $('card-text').focus()
+      }))
+    }
+    box._hits = null
+    box.replaceChildren(head, ...(rows.length ? rows : [Object.assign(document.createElement('div'), { textContent: 'Empty folder' })]))
+    box.hidden = false
+  } catch (e) { toast(e.message) }
+}
+function closeMenu() { $('cmenu').hidden = true; $('cb-plus').setAttribute('aria-expanded', 'false') }
+$('cb-plus').onclick = () => {
+  const open = $('cmenu').hidden
+  $('cmenu').hidden = !open
+  $('cb-plus').setAttribute('aria-expanded', String(open))
+  $('cmdlist').hidden = true
+  sfx.click()
+}
+$('cm-upload').onclick = () => { closeMenu(); $('cb-file').click() }
+$('cb-file').onchange = (e) => { const files = [...e.target.files]; e.target.value = ''; uploadFiles(files) }
+$('cm-context').onclick = () => { closeMenu(); showContextPicker('') }
+$('cm-web').onclick = () => { closeMenu(); webOn = true; renderAtts(); sfx.click(); $('card-text').focus() }
+$('cb-slash').onclick = () => {
+  closeMenu()
+  const inp = $('card-text')
+  if (!inp.value.startsWith('/')) inp.value = '/'
+  inp.focus()
+  cmdSel = 0
+  renderCmds()
+  sfx.click()
+}
+$('cb-model').onclick = () => { closeMenu(); showModelPicker() }
+addEventListener('pointerdown', (e) => { if (!$('cmenu').hidden && !e.target.closest('#cmenu, #cb-plus')) closeMenu() })
 
 // Model chooser: /model on its own opens a selector in the terminal, so the window offers its own
 const MODEL_CHOICES = [
@@ -1552,7 +1824,8 @@ function showModelPicker() {
     const n = document.createElement('b'); n.textContent = label
     const d = document.createElement('span'); d.textContent = desc
     b.append(n, d)
-    b.onmousedown = (e) => { e.preventDefault(); box.hidden = true; sendCommand('say', '/model ' + id) }
+    b.onmousedown = (e) => { e.preventDefault(); box.hidden = true; sendModel(id) }
+    if (selSession() && friendlyModel(infoData[selSession()]?.model).toLowerCase().startsWith(label.split(' ')[0].toLowerCase())) b.style.fontWeight = '900', n.textContent = '✓ ' + label
     return b
   }))
   box.hidden = false
@@ -1641,7 +1914,8 @@ function onChat(data) {
     if (lastA && seenAssistant.get(session) !== lastA.id) {
       seenAssistant.set(session, lastA.id)
       if (chatInit && ag) {
-        say(ag, lastA.text.length > 140 ? lastA.text.slice(0, 137) + '…' : lastA.text, 11000)
+        const plain = plainText(lastA.text)
+        say(ag, plain.length > 140 ? plain.slice(0, 137) + '…' : plain, 11000)
         ag.char.state.hop = 0.25
         sfx.done()
         if (!(selected?.kind === 'agent' && selected.key === ag.key)) toast('💬 ' + ag.data.name + (ag.loc !== sceneName ? ' (' + (LOC_LABEL[ag.loc] ?? '') + ')' : '') + ' replied')
@@ -1667,7 +1941,8 @@ function renderChat(force) {
     const d = document.createElement('div')
     d.className = 'msg ' + m.role + (m.role === 'user' && m.state === 'error' ? ' err' : '')
     const t = document.createElement('div')
-    t.textContent = m.text
+    if (m.role === 'assistant') { t.className = 'md'; t.appendChild(renderMarkdown(m.text)) } // Claude's replies are Markdown
+    else t.textContent = m.text
     d.appendChild(t)
     const sm = document.createElement('small')
     if (m.role === 'user') {
@@ -1783,6 +2058,11 @@ function connect() {
     onAgents(data.agents ?? [])
     onChat(data.chat)
     onPerms(data.perms ?? [])
+    infoData = data.info ?? {}
+    updateModelChip()
+    actsData = data.acts ?? {}
+    roots = data.roots ?? {}
+    renderActs()
     const l = data.layout
     if (!l || !l.scenes || drag?.moved || savePending) return
     const before = JSON.stringify(layout.scenes[keyOf(sceneName)] ?? null)

@@ -55,6 +55,11 @@ async function pollCommands($) {
         void runSlash($, c.id, m[1], m[2])
       } else if (c.kind === 'commands') {
         void sendCommandList($)
+      } else if (c.kind === 'rename') {
+        const n = String(c.value ?? '').replace(/[^\p{L}\p{N} _.\-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40)
+        if (n) { agentName = n; send($, { type: 'session_start', label: n }) }
+      } else if (c.kind === 'model') {
+        void switchModel($, String(c.value))
       } else if (c.kind === 'say' && c.text) {
         const p = $.prompt.submit({ text: String(c.text), asUser: true })
         send($, { type: 'say_delivered', id: c.id }) // the window shows "delivered"
@@ -82,6 +87,7 @@ async function runSlash($, id, name, args) {
     if (!list.some((x) => x.name === name)) return send($, { type: 'command_result', id, ok: false, text: 'Unknown command: /' + name })
     const r = await $.command.run({ command: name, args })
     send($, { type: 'command_result', id, ok: true, text: r && r.text ? String(r.text) : '' })
+    void sendInfo($) // a command like /model may have changed it
   } catch (e) {
     send($, { type: 'command_result', id, ok: false, text: String((e && e.message) || e).slice(0, 300) })
   }
@@ -90,10 +96,28 @@ async function runSlash($, id, name, args) {
 async function sendCommandList($) {
   try {
     const list = await $.command.list()
+    void sendInfo($)
     send($, { type: 'commands', list: list.slice(0, 500).map((c) => ({ name: c.name, description: String(c.description || '').slice(0, 120) })) })
   } catch {
     // not available: the chat still works, only without suggestions
   }
+}
+
+// Tells the window what the session runs with (the model), for the chip under the chat.
+async function sendInfo($) {
+  try { send($, { type: 'info', model: String(await $.session.model()) }) } catch {
+    // unavailable: the chip just stays empty
+  }
+}
+// Switches the session's model (the same as the /config Model row); the new model takes effect at once.
+async function switchModel($, value) {
+  try {
+    const r = await $.config.set({ key: 'model', value })
+    if (r && r.deny) send($, { type: 'info_error', text: 'Could not switch the model: ' + r.deny })
+  } catch (e) {
+    send($, { type: 'info_error', text: 'Could not switch the model: ' + String((e && e.message) || e).slice(0, 200) })
+  }
+  await sendInfo($)
 }
 
 // Closes this Claude Code session. First tells the server, then stops the process hosting it.
@@ -183,6 +207,19 @@ async function askWindow($, e, base) {
     : { decision: 'deny', reason: 'Denied from the Vibeship window' }
 }
 
+// One finished action for the window's activity feed: what was touched and whether it worked.
+const lineCount = (t) => (typeof t === 'string' && t.length ? t.split('\n').length : 0)
+function activityOf(e, r) {
+  const i = e.input ?? {}
+  const file = i.file_path ?? i.notebook_path ?? null
+  const act = { type: 'activity', agentId: e.agentId, tool: String(e.tool ?? ''), kind: statusOf(e.tool), ok: !(r && r.isError), summary: summaryOf(e).slice(0, 160) }
+  if (typeof file === 'string') act.file = file
+  if (e.tool === 'Edit') { act.add = lineCount(i.new_string); act.del = lineCount(i.old_string) }
+  else if (e.tool === 'Write') act.add = lineCount(i.content)
+  if (r && r.isError && typeof r.text === 'string') act.error = r.text.replace(/\s+/g, ' ').slice(0, 160)
+  return act
+}
+
 function detailOf(e) {
   const raw = e.file_path ?? e.path ?? e.pattern ?? e.command ?? e.query ?? e.url ?? ''
   const s = String(raw).split(/[\\/]/).pop() ?? ''
@@ -249,7 +286,7 @@ async function openWindow($) {
 async function runWindowCommand($) {
   const ok = await openWindow($)
   const cwd = await $.session.cwd()
-  send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc })
+  send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc, cwd: String(cwd) })
   void sendCommandList($)
   return { text: ok ? 'Vibeship window opened: ' + BASE : 'Server started on ' + BASE + ' but I could not open the browser: open it manually.' }
 }
@@ -272,7 +309,7 @@ export function register(on) {
     cancelPoll = $.clock.every(1000, () => void pollCommands($))
     const cwd = await $.session.cwd()
     // If the server is already up (window open), report the session; otherwise it starts with /vibeship
-    if (await isServerUp($)) { send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc }); void sendCommandList($) }
+    if (await isServerUp($)) { send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc, cwd: String(cwd) }); void sendCommandList($) }
     return next(e)
   })
 
@@ -301,13 +338,18 @@ export function register(on) {
   on('tool.check', async ($, e, next) => {
     const r = await next(e)
     if (r.decision !== 'ask' || !e.tool_use_id) return r
+    // Some calls can only be decided by the auto-mode classifier (e.g. a subagent handing back its report): an
+    // answer from the window is refused ("Only the auto-mode classifier can allow ...") and the call fails again and again.
+    if (/classifier/i.test(String(r.reason ?? ''))) return r
     if (sessionAllowed.has(String(e.tool))) return { decision: 'allow', reason: 'Allowed for this session from the Vibeship window' }
     return askWindow($, e, r)
   })
 
   on('tool.call', async ($, e, next) => {
     send($, { type: 'tool', agentId: e.agentId, status: statusOf(e.tool), detail: detailOf(e) })
-    return next(e)
+    const r = await next(e)
+    if (!r.deny) send($, activityOf(e, r))
+    return r
   })
 
   on('agent.spawn', async ($, e, next) => {
@@ -320,6 +362,7 @@ export function register(on) {
     if (e.agentId) { send($, { type: 'sub_done', agentId: e.agentId, answer: e.answer, reason: e.reason }); return next(e) } // the subagent is done, but not the main turn
     turnId = null
     send($, { type: 'turn_complete', answer: e.answer, reason: e.reason })
+    void sendInfo($)
     return next(e)
   })
 }

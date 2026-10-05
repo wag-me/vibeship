@@ -5,11 +5,16 @@
 A **3D spaceship** where your [Claude Code](https://claude.com/claude-code) agents work in crew uniforms.
 It is a Claude Code *mod* (plugin): every session becomes a little animal that walks, sits at the console, thinks, sleeps and cheers while it really works.
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Vibeship in action: an agent works at its console, a subagent flies in and roams the room, a chat message gets its reply" width="720">
+</p>
+
 ## What it does
 - **See what your agents are doing**: they read, write, run commands, search the web. Each agent has a species (fox, cat, dog, raccoon, rabbit, bear, bird) and a uniform (captain, engineer, pilot, scientist, medic, explorer, cadet).
 - **Three locations** (Bridge, Engine room, Greenhouse), each with its own agents. Move an agent from its card or by dragging it onto a location's tab (in edit mode).
 - **Chat with your agents** from the window: see the conversation, the state of each message and the reply. You can stop or close an agent.
   - Type **`/`** to run slash commands and skills, with suggestions as you type (`/compact`, `/cost`, `/model sonnet`, ...). They run in that session as if typed in the terminal and their output comes back in the chat. A bare `/model` shows a model chooser in the window.
+- **See what was done**: the agent card has a **Recent activity** feed (files written with `+/−` lines, commands run, failures in red) and a **📁 Files** button. Files browses the agent's working folder and previews text files; the ones Claude touched are highlighted, and clicking an activity row opens that file. It is read-only, limited to the working folder, and hides `node_modules`, `.git` and files that usually hold secrets (`.env`, keys).
 - **Permissions**: when Claude asks for confirmation, the ship goes on alert and you approve or deny from the window (if you don't answer within ~30 s the question falls back to the terminal). For tools that cannot run commands or change files there is also **Allow all session**, so the same question stops coming back.
 - **Subagents**: a drone leaves the main agent and lands on the launch pad, where the subagent materializes. While its task runs it roams the room: it sits on free sofas and armchairs, goes to look at objects, or takes a stroll. When the task is done it returns with the result.
 - **New agents**: from the *Agent* button pick location, character, uniform and folder (even a **new project**, with optional `git init`) and a terminal with Claude Code opens. Select a work station and press *Add an agent at this station* to have the new agent sit there.
@@ -76,6 +81,8 @@ server/server.js                  local server (SSE, commands, permissions, agen
 web/                              the 3D window (Three.js, no build step)
   js/                             scene, characters, furniture, effects, audio
   vendor/three/                   Three.js (MIT)
+docs/demo.gif                     the animation above
+tools/make-demo.js                regenerates it (`node tools/make-demo.js`, needs Edge or Chrome)
 tests/                            mod tests, server tests, live window check
 ```
 
@@ -87,6 +94,27 @@ node --test tests/server.test.js     # server tests
 node tests/ui-smoke.js               # opens the window in headless Edge/Chrome and checks it
 ```
 Reload the window with Ctrl+R: files are served from disk, so changes in `web/` do not need a server restart.
+
+## Contributing
+Contributions are welcome, from a typo to a new feature.
+
+- **Found a bug?** Open an [issue](https://github.com/wag-me/vibeship/issues) with your Claude Code version (`claude --version`), your OS and browser, what you did and what happened. A screenshot helps a lot.
+- **Have an idea?** Open an issue first to talk about it, so nobody works on something that will not fit.
+- **Want to code?** Fork the repo, make a branch, and open a pull request:
+  1. Run the mod from your fork with `claude --plugin-dir /path/to/your/fork`.
+  2. Keep the project simple: no build step and no npm dependencies. The window is plain JavaScript modules with Three.js, the server is plain Node.
+  3. Write UI text and code comments in English, and follow the style of the surrounding code.
+  4. Before opening the pull request, run the checks from [Development](#development) and add a test for what you changed when you can.
+  5. Keep each pull request focused on one thing and describe what it does and why.
+
+Things that would help right now:
+- **Testing on macOS and Linux.** The code is written for them but only Windows is tested.
+- **Notifications** when an agent finishes or asks for a permission while the window is in the background.
+- **Cost estimates** next to the token statistics.
+- New characters, furniture, rooms and sounds.
+- Saving the chat history to disk.
+
+By contributing you agree that your work is released under the [MIT License](LICENSE).
 
 ## Licenses
 Vibeship is released under the [MIT License](LICENSE). Three.js is included in `web/vendor/three/` under its own MIT license.

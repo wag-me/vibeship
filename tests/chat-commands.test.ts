@@ -96,3 +96,53 @@ test('a deny from the window is passed on', async ($, on) => {
   posted.decision = 'deny'
   expect((await $.tool.check({ tool: 'Bash', input: {}, tool_use_id: 'd' })).decision).toBe('deny')
 })
+
+test('a finished tool call reaches the window with the file, the lines changed and whether it worked', async ($, on) => {
+  on('tool.call', () => ({ result: {}, text: 'ok' })) // the engine beneath the plugin
+  const posted = await boot($, on, [])
+  expect(posted.find((p) => p.type === 'session_start')).toMatchObject({ cwd: 'C:/work/proj' })
+  await $.tool.call({ tool: 'Edit', input: { file_path: 'C:/work/proj/a.js', old_string: 'x', new_string: 'x\ny\nz' } })
+  expect(posted.find((p) => p.type === 'activity')).toMatchObject({ tool: 'Edit', kind: 'write', ok: true, file: 'C:/work/proj/a.js', add: 3, del: 1 })
+})
+
+test('a failed tool call is reported as failed', async ($, on) => {
+  on('tool.call', () => ({ isError: true, result: 'boom', text: 'exit code 1' }))
+  const posted = await boot($, on, [])
+  await $.tool.call({ tool: 'Bash', input: { command: 'npm test' } })
+  expect(posted.find((p) => p.type === 'activity')).toMatchObject({ tool: 'Bash', kind: 'run', ok: false, error: 'exit code 1' })
+})
+
+test('calls that only the auto-mode classifier can allow are left to the engine, not shown in the window', async ($, on) => {
+  on('tool.check', () => ({ decision: 'ask', reason: 'SubagentHandback requires auto-mode classifier review' }))
+  const posted = await boot($, on, [])
+  posted.decision = 'allow' // even if the person would click Allow, the mod must not answer for the classifier
+  const r = await $.tool.check({ tool: 'SubagentHandback', input: {}, tool_use_id: 'h1' })
+  expect(r.decision).toBe('ask') // passed on untouched
+  expect(posted.waits).toBe(0) // the window was never asked
+  expect(posted.some((p: any) => p.type === 'permission')).toBe(false)
+})
+
+test('the window can switch the model; the mod reports what the session runs with', async ($, on) => {
+  let model = 'claude-sonnet-5-5'
+  const sets: any[] = []
+  on('session.model', () => ({ value: model }))
+  on('config.set', (_: any, e: any) => { sets.push(e); model = 'claude-opus-5-5'; return { value: e.value } })
+  const posted = await boot($, on, [{ kind: 'model', value: 'opus' }])
+  expect(sets.map((x) => [x.key, x.value])).toEqual([['model', 'opus']])
+  const infos = posted.filter((p: any) => p.type === 'info')
+  expect(infos.length).toBeGreaterThan(0) // the model is reported to the window
+  expect(infos.at(-1).model).toBe('claude-opus-5-5') // and the last report is the model after the switch
+})
+
+test('a refused model switch is reported to the window', async ($, on) => {
+  on('session.model', () => ({ value: 'claude-sonnet-5-5' }))
+  on('config.set', () => ({ deny: 'managed by policy' }))
+  const posted = await boot($, on, [{ kind: 'model', value: 'opus' }])
+  expect(posted.find((p: any) => p.type === 'info_error').text).toContain('managed by policy')
+})
+
+test('a rename from the window sticks: the mod announces the new name', async ($, on) => {
+  const posted = await boot($, on, [{ kind: 'rename', value: 'Ada  <Lovelace>' }])
+  const starts = posted.filter((p: any) => p.type === 'session_start')
+  expect(starts.at(-1).label).toBe('Ada Lovelace') // symbols are stripped and spaces collapsed
+})

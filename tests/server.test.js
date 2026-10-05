@@ -220,3 +220,86 @@ test('layout: saved and returned in the snapshot', async () => {
   assert.equal((await api('/api/layout', { method: 'POST', body: { nonsense: true } })).status, 204) // ignored, not stored
   assert.deepEqual((await snapshot()).layout, layout)
 })
+
+test('activity feed and Files panel: browse only inside the working folder', async () => {
+  const work = path.join(tmp, 'work')
+  fs.mkdirSync(path.join(work, 'src'), { recursive: true })
+  fs.writeFileSync(path.join(work, 'src', 'a.js'), 'console.log(1)\n')
+  fs.writeFileSync(path.join(work, '.env'), 'SECRET=1')
+  fs.writeFileSync(path.join(work, 'bin.dat'), Buffer.from([1, 0, 2]))
+  fs.writeFileSync(path.join(tmp, 'outside.txt'), 'nope')
+  await event({ type: 'session_start', session: 'f1', label: 'files', cwd: work })
+  await event({ type: 'tool', session: 'f1', status: 'write', detail: 'a.js' })
+  await event({ type: 'activity', session: 'f1', tool: 'Edit', kind: 'write', ok: true, summary: 'x', file: path.join(work, 'src', 'a.js'), add: 3, del: 1 })
+  await event({ type: 'activity', session: 'f1', tool: 'Bash', kind: 'run', ok: false, summary: 'npm test', error: 'exit 1' })
+  const snap = await snapshot()
+  assert.equal(snap.acts.f1.length, 2)
+  assert.equal(snap.acts.f1[0].rel, 'src/a.js') // absolute path becomes relative to the folder
+  assert.equal(snap.acts.f1[0].add, 3)
+  assert.equal(snap.acts.f1[1].ok, false)
+  assert.equal(snap.roots.f1, 'work')
+  assert.ok(!JSON.stringify(snap).includes(JSON.stringify(work).slice(1, -1)), 'the absolute folder never reaches the window')
+
+  const ls = await (await api('/api/files?session=f1&path=')).json()
+  assert.deepEqual(ls.entries.map((e) => e.name), ['src', '.env', 'bin.dat']) // folders first
+  const file = await (await api('/api/file?session=f1&path=src/a.js')).json()
+  assert.equal(file.text, 'console.log(1)\n')
+  assert.ok((await (await api('/api/file?session=f1&path=.env')).json()).blocked)
+  assert.ok((await (await api('/api/file?session=f1&path=bin.dat')).json()).blocked)
+  for (const p of ['../outside.txt', path.join(tmp, 'outside.txt'), 'src/../../outside.txt']) {
+    const r = await api('/api/file?session=f1&path=' + encodeURIComponent(p))
+    assert.equal(r.status, 400, p)
+  }
+  assert.equal((await api('/api/files?session=f1&path=', { auth: false })).status, 401)
+  assert.equal((await api('/api/files?session=nope&path=')).status, 400)
+  await event({ type: 'session_end', session: 'f1' })
+  assert.equal((await api('/api/files?session=f1&path=')).status, 400)
+})
+
+test('model switch commands are validated and queued; info is shown in the snapshot', async () => {
+  await event({ type: 'session_start', session: 'mi' })
+  assert.equal((await api('/api/command', { method: 'POST', body: { session: 'mi', kind: 'model', value: 'opus' } })).status, 204)
+  assert.equal((await api('/api/command', { method: 'POST', body: { session: 'mi', kind: 'model', value: 'sonnet[1m]' } })).status, 204)
+  for (const bad of ['', 'Opus 5', 'a/b', 'x'.repeat(31), '$(rm)', undefined]) {
+    assert.equal((await api('/api/command', { method: 'POST', body: { session: 'mi', kind: 'model', value: bad } })).status, 400, JSON.stringify(bad))
+  }
+  const q = (await (await api('/api/poll?session=mi')).json()).commands
+  assert.deepEqual(q.map((c) => [c.kind, c.value]), [['model', 'opus'], ['model', 'sonnet[1m]']])
+  await event({ type: 'info', session: 'mi', model: 'claude-opus-5-5' })
+  assert.deepEqual((await snapshot()).info.mi, { model: 'claude-opus-5-5' })
+  await event({ type: 'info_error', session: 'mi', text: 'Could not switch the model: nope' })
+  assert.match((await snapshot()).chat.mi.at(-1).text, /nope/)
+  await event({ type: 'session_end', session: 'mi' })
+  assert.equal((await snapshot()).info.mi, undefined)
+})
+
+test('uploads: saved in the data folder, safe names, size limit, token required', async () => {
+  const up = (name, bytes, auth = true) => api('/api/upload', { method: 'POST', auth, body: { session: 'x', name, data: Buffer.from(bytes).toString('base64') } })
+  assert.equal((await up('a.txt', 'hi', false)).status, 401)
+  const r = await up('../../evil name?.txt', 'hello')
+  assert.equal(r.status, 200)
+  const d = await r.json()
+  assert.equal(fs.readFileSync(d.path, 'utf8'), 'hello')
+  assert.equal(path.dirname(d.path), path.join(tmp, 'data', 'uploads')) // never outside the uploads folder
+  assert.ok(!/[?\\/]/.test(path.basename(d.path)))
+  assert.equal((await up('empty.txt', '')).status, 400)
+  assert.equal((await up('big.bin', Buffer.alloc(8 * 1024 * 1024 + 1))).status, 400)
+})
+
+test('rename: applied at once, unique among agents, cleaned, and queued for the mod', async () => {
+  await event({ type: 'session_start', session: 'r1', label: 'alpha' })
+  await event({ type: 'session_start', session: 'r2', label: 'beta' })
+  const rename = (session, value) => api('/api/command', { method: 'POST', body: { session, kind: 'rename', value } })
+  assert.equal((await rename('r1', '  Ada   Lovelace  ')).status, 204)
+  assert.equal((await snapshot()).agents.find((a) => a.session === 'r1').name, 'Ada Lovelace')
+  assert.equal((await rename('r2', 'Ada Lovelace')).status, 204)
+  assert.equal((await snapshot()).agents.find((a) => a.session === 'r2').name, 'Ada Lovelace #2') // two agents never share a name
+  assert.equal((await rename('r1', '<b>x</b>/\\')).status, 204)
+  assert.equal((await snapshot()).agents.find((a) => a.session === 'r1').name, 'bxb') // symbols are stripped, the letters stay
+  for (const bad of ['', '   ', '<>/', undefined, 5]) assert.equal((await rename('r1', bad)).status, 400, JSON.stringify(bad))
+  assert.equal((await rename('ghost', 'x')).status, 400)
+  const q = (await (await api('/api/poll?session=r1')).json()).commands.filter((c) => c.kind === 'rename')
+  assert.deepEqual(q.map((c) => c.value), ['Ada Lovelace', 'bxb'])
+  await event({ type: 'session_end', session: 'r1' })
+  await event({ type: 'session_end', session: 'r2' })
+})

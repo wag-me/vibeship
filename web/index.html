@@ -117,6 +117,34 @@
   .dirs .none { color: var(--muted); padding: 8px 10px; font-size: 12.5px; }
   #spawn .go { width: 100%; justify-content: center; }
 
+  /* ---- Files + activity ---- */
+  #files { position: absolute; z-index: 6; left: 14px; top: 70px; width: min(560px, calc(100vw - 28px)); max-height: calc(100vh - 150px); overflow: auto; background: var(--cream); border: 4px solid #fff; border-radius: 26px; box-shadow: 0 8px 0 rgba(120,85,40,.25); padding: 4px 16px 16px; animation: pop .2s cubic-bezier(.3,1.6,.5,1); }
+  #files[hidden] { display: none; }
+  #files h2 { margin: 0; font-size: 16px; padding: 10px 0 2px; display: flex; align-items: center; justify-content: space-between; }
+  .crumbs { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 0 8px; font-size: 12.5px; font-weight: 700; }
+  .crumbs button { background: none; border: 0; padding: 2px 4px; border-radius: 8px; color: var(--muted); cursor: pointer; font: inherit; }
+  .crumbs button:hover, .crumbs button:focus-visible { background: var(--cream2); }
+  #fl-list button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 0; border-radius: 12px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  #fl-list button:hover, #fl-list button:focus-visible { background: var(--cream2); }
+  #fl-list .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #fl-list small, .fv-head small { color: var(--muted); font-size: 11px; }
+  #fl-list .hot { background: #fff3c4; }
+  #fl-list .hot small.tag { color: #b8860b; font-weight: 800; }
+  #fl-list .none { color: var(--muted); padding: 8px 10px; font-size: 12.5px; }
+  .fv-head { display: flex; align-items: center; gap: 8px; padding: 4px 0 8px; }
+  .fv-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  #fv-text { margin: 0; max-height: calc(100vh - 290px); overflow: auto; background: #fff; border: 3px solid var(--line); border-radius: 16px; padding: 10px 12px; font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre; tab-size: 2; }
+  #acts-box { margin: 8px 0 0; font-size: 12.5px; }
+  #acts-box summary { cursor: pointer; font-weight: 800; color: var(--muted); }
+  #acts { max-height: 150px; overflow-y: auto; margin-top: 4px; }
+  #acts .act { display: flex; align-items: baseline; gap: 6px; width: 100%; background: none; border: 0; border-radius: 10px; padding: 3px 6px; font: inherit; font-size: 12px; text-align: left; }
+  #acts button.act { cursor: pointer; }
+  #acts button.act:hover, #acts button.act:focus-visible { background: var(--cream2); }
+  #acts .act .s { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #acts .act.bad .s { color: #c0392b; }
+  #acts .plus { color: #2e8b57; font-weight: 800; } #acts .minus { color: #c0392b; font-weight: 800; }
+  #acts .none { color: var(--muted); padding: 4px 6px; }
+
   /* ---- Statistics ---- */
   #stats { position: absolute; z-index: 6; right: 14px; top: 70px; width: min(520px, calc(100vw - 28px)); max-height: calc(100vh - 150px); overflow: auto; background: var(--cream); border: 4px solid #fff; border-radius: 26px; box-shadow: 0 8px 0 rgba(120,85,40,.25); padding: 4px 16px 16px; animation: pop .2s cubic-bezier(.3,1.6,.5,1); }
   #stats[hidden] { display: none; }
@@ -158,6 +186,8 @@
   #card .row { display: flex; gap: 8px; margin-top: 10px; }
   #card .note { color: var(--muted); font-size: 12px; margin-top: 8px; font-weight: 700; }
   #card .x { position: absolute; right: 10px; top: 10px; }
+  #card .rn { position: absolute; right: 52px; top: 10px; }
+  #card h2 input { font: inherit; font-size: 17px; font-weight: 900; width: 100%; padding: 0 8px; border-radius: 10px; border: 2px solid var(--leaf); background: #fff; color: var(--ink); }
 
   /* ---- Slash command suggestions ---- */
   #cmdlist { max-height: 170px; overflow: auto; margin: 0 0 6px; background: #fff; border: 3px solid var(--line); border-radius: 18px; padding: 4px; }
@@ -183,6 +213,45 @@
   .msg.assistant small { color: var(--muted); }
   .msg .via { opacity: .8; font-size: 11px; font-weight: 800; }
   .msg.err { background: #ffd9d9; border-color: #ffb3b3; }
+  /* ---- Toolbar under the chat input ---- */
+  #atts { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 6px; }
+  #atts[hidden] { display: none; }
+  .chip2 { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; background: var(--cream2); border: 2px solid var(--line); border-radius: 999px; padding: 1px 4px 1px 9px; font-size: 11.5px; font-weight: 800; }
+  .chip2 span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+  .chip2 button { border: 0; background: transparent; border-radius: 50%; width: 18px; height: 18px; line-height: 1; font-size: 11px; padding: 0; color: var(--muted); }
+  .chip2 button:hover { background: #fff; color: var(--ink); }
+  .cbar { display: flex; gap: 6px; align-items: center; margin: 7px 0 0; }
+  .cb { position: relative; min-width: 28px; height: 28px; border: 0; border-radius: 999px; background: var(--cream2); color: var(--ink); font: 900 14px/1 inherit; font-family: inherit; padding: 0 9px; box-shadow: 0 2px 0 rgba(120,85,40,.16); }
+  .cb:hover { background: #fff; }
+  .cb[aria-expanded="true"] { background: var(--leaf); color: #fff; }
+  .cb.model { margin-left: auto; height: 24px; font-size: 11.5px; font-weight: 800; color: var(--muted); }
+  .cb[data-tip]::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 7px); left: 0; transform: translate(0, 3px); background: var(--ink); color: #fff6e0; border-radius: 9px; padding: 2px 8px; font: 700 11.5px/1.3 inherit; font-family: inherit; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .12s, transform .12s; z-index: 2; }
+  .cb.model[data-tip]::after { left: auto; right: 0; }
+  .cb[data-tip]:hover::after, .cb[data-tip]:focus-visible::after { opacity: 1; transform: translate(0, 0); }
+  #cmenu { margin: 6px 0 0; background: #fff; border: 3px solid var(--line); border-radius: 16px; padding: 4px; }
+  #cmenu[hidden] { display: none; }
+  #cmenu button { display: flex; gap: 9px; align-items: center; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 12px; padding: 6px 10px; font: inherit; font-weight: 800; font-size: 13px; }
+  #cmenu button:hover, #cmenu button:focus-visible { background: var(--cream2); }
+
+  /* Markdown inside Claude's replies */
+  .msg .md { white-space: normal; }
+  .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 7px; }
+  .md .md-h { font-weight: 900; font-size: 13.5px; margin: 8px 0 4px; }
+  .md ul, .md ol { margin: 3px 0 7px; padding-left: 20px; }
+  .md li { margin: 2px 0; }
+  .md li > ul, .md li > ol { margin: 2px 0; }
+  .md strong { font-weight: 900; }
+  .md code { font: 600 12px/1.4 ui-monospace, Consolas, monospace; background: var(--cream2); border-radius: 6px; padding: 1px 5px; overflow-wrap: anywhere; }
+  .md pre { margin: 4px 0 8px; background: #1e2745; color: #e8eeff; border-radius: 12px; padding: 8px 10px; overflow-x: auto; white-space: pre; }
+  .md pre code { background: transparent; padding: 0; color: inherit; overflow-wrap: normal; }
+  .md blockquote { margin: 4px 0 8px; padding: 1px 0 1px 10px; border-left: 4px solid var(--leaf); color: var(--muted); }
+  .md hr { border: 0; border-top: 2px solid var(--line); margin: 8px 0; }
+  .md a { color: var(--leaf-d); font-weight: 800; }
+  .md .md-table { overflow-x: auto; margin: 4px 0 8px; }
+  .md table { border-collapse: collapse; font-size: 12px; }
+  .md th, .md td { border: 2px solid var(--line); padding: 3px 8px; text-align: left; }
+  .md th { background: var(--cream2); }
   .dots::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4) infinite; }
   @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
 
@@ -311,19 +380,43 @@
     <div id="st-body"></div>
   </section>
 
+  <section id="files" hidden aria-label="Project files">
+    <h2><span id="fl-title">📁 Files</span><button class="btn sq" id="fl-close" aria-label="Close"><span class="ic">✕</span></button></h2>
+    <div class="crumbs" id="fl-crumbs"></div>
+    <div id="fl-list" role="list"></div>
+    <div id="fl-view" hidden>
+      <div class="fv-head"><button class="btn" id="fv-back" type="button">← Back</button><b id="fv-name"></b><small id="fv-meta"></small></div>
+      <pre id="fv-text"></pre>
+    </div>
+  </section>
+
   <div id="card" hidden role="dialog" aria-label="Agent card">
     <button class="btn sq x" id="card-close" aria-label="Close"><span class="ic">✕</span></button>
-    <h2 id="card-name"></h2>
+    <button class="btn sq rn" id="card-rename" type="button" aria-label="Rename" data-tip="Rename"><span class="ic">✏️</span></button>
+    <h2 id="card-name" title="Double-click to rename"></h2>
     <div class="sp" id="card-sp"></div>
     <div class="st"><span class="big" id="card-ic"></span><span id="card-st"></span></div>
     <div class="chat" id="chat" aria-live="polite" aria-label="Conversation"></div>
+    <div id="atts" aria-label="Attachments" hidden></div>
+    <details id="acts-box" open><summary>🧾 Recent activity</summary><div id="acts" aria-live="polite"></div></details>
     <div id="cmdlist" role="listbox" aria-label="Slash commands" hidden></div>
     <form id="card-form" autocomplete="off">
       <input id="card-text" placeholder="Message, or / for commands" maxlength="2000" aria-label="Message for Claude">
       <button class="btn primary" type="submit">Send</button>
     </form>
+    <div id="cmenu" role="menu" aria-label="Add to the message" hidden>
+      <button type="button" role="menuitem" id="cm-upload"><span>⬆️</span> Upload from computer</button>
+      <button type="button" role="menuitem" id="cm-context"><span>📄</span> Add context</button>
+      <button type="button" role="menuitem" id="cm-web"><span>🌐</span> Browse the web</button>
+    </div>
+    <div class="cbar" id="cbar">
+      <button type="button" class="cb" id="cb-plus" aria-haspopup="menu" aria-expanded="false" aria-label="Add files, context or the web" data-tip="Add to the message">＋</button>
+      <button type="button" class="cb" id="cb-slash" aria-label="Commands" data-tip="Commands">/</button>
+      <button type="button" class="cb model" id="cb-model" aria-label="Switch model" data-tip="Switch model"><span id="cb-model-name">model</span></button>
+      <input type="file" id="cb-file" multiple hidden>
+    </div>
     <div class="movebar" id="card-move" role="group" aria-label="Move to another location"></div>
-    <div class="row"><button class="btn danger" id="card-stop" type="button">✋ Stop work</button><button class="btn danger" id="card-end" type="button">🚪 Close agent</button></div>
+    <div class="row"><button class="btn" id="card-files" type="button">📁 Files</button><button class="btn danger" id="card-stop" type="button">✋ Stop work</button><button class="btn danger" id="card-end" type="button">🚪 Close agent</button></div>
     <div class="note" id="card-note"></div>
   </div>
 

@@ -1,0 +1,12 @@
+{
+  "name": "vibeship",
+  "description": "Vibeship: a 3D spaceship for your Claude Code agents",
+  "owner": { "name": "wag-me" },
+  "plugins": [
+    {
+      "name": "vibeship",
+      "source": "./",
+      "description": "A 3D spaceship where your Claude Code agents work in crew uniforms. Command: /vibeship"
+    }
+  ]
+}

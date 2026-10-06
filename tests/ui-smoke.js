@@ -1,6 +1,6 @@
 // Live UI check: starts the server, opens the window in headless Edge/Chrome and drives it through the DevTools protocol.
 // Run with `node tests/ui-smoke.js` (needs Edge or Chrome installed; no npm packages). Saves a screenshot next to this file.
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -16,7 +16,7 @@ const BROWSERS = [
 const freePort = () => new Promise((res) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)) }) })
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-let server, browser, tmp, ws, nextId = 1
+let server, browser, tmp, ws, web, webPort, nextId = 1
 const pending = new Map()
 const errors = []
 const results = []
@@ -207,6 +207,18 @@ async function main() {
     assert.equal(await ev("document.getElementById('fv-text').textContent"), 'let hello = 1\n')
     await ev("document.getElementById('fl-close').click()")
   })
+  await step('agent card: a web server the agent started is listed with its page title and an Open button', async () => {
+    // `web` plays the Claude Code session and starts a web server (which quits when `web` is killed). Not this script
+    // itself: the headless browser is its child too, and its debugging port would count as one of the agent's servers.
+    const site = "require('http').createServer((q, r) => { r.setHeader('Content-Type', 'text/html'); r.end('<title>Shop demo</title>') }).listen(0, '127.0.0.1', function () { console.log(this.address().port) }); process.stdin.on('end', () => process.exit()).resume()"
+    web = spawn(process.execPath, ['-e', 'require("child_process").spawn(process.execPath, ["-e", ' + JSON.stringify(site) + '], { stdio: ["pipe", "inherit", "ignore"] }); setInterval(() => {}, 1e6)'], { stdio: ['ignore', 'pipe', 'ignore'] })
+    webPort = Number(await new Promise((r) => web.stdout.once('data', (d) => r(String(d).trim()))))
+    await post('/api/event', { type: 'proc', session: 's1', pid: web.pid })
+    await ev('window.__ao.select({ kind: "agent", key: "s1:main" })')
+    for (let i = 0; i < 80 && (await ev("document.getElementById('ports-box').hidden")); i++) await sleep(250)
+    assert.equal(await ev("document.getElementById('ports-box').hidden"), false)
+    assert.match(await ev("document.getElementById('ports').textContent"), new RegExp(':' + webPort + 'Shop demo.*Open'))
+  })
   await step('agent card: typing "/" shows command suggestions, filtering and Tab complete', async () => {
     await ev('window.__ao.select({ kind: "agent", key: "s1:main" })')
     await sleep(800)
@@ -339,6 +351,19 @@ async function main() {
     await ev("document.getElementById('upd-x').click()")
     assert.equal(await ev("document.getElementById('upd').hidden"), true)
   })
+  await step('a server still running after its session ends shows up in the footer, with the agent it came from', async () => {
+    const name = await ev('window.__ao.agents.get("s1:main").data.name') // renamed by an earlier check
+    await post('/api/event', { type: 'session_end', session: 's1' })
+    for (let i = 0; i < 80 && (await ev("document.getElementById('orph').hidden")); i++) await sleep(250)
+    assert.equal(await ev("document.getElementById('orph').textContent"), '🔌 1 server left running')
+    await ev("document.getElementById('orph').click()")
+    assert.equal(await ev("document.getElementById('orph-pop').hidden"), false)
+    assert.match(await ev("document.getElementById('orph-list').textContent"), new RegExp(':' + webPort + 'Shop demo.*from ' + name))
+    web.kill() // once it stops listening, the notice goes away
+    for (let i = 0; i < 80 && !(await ev("document.getElementById('orph').hidden")); i++) await sleep(250)
+    assert.equal(await ev("document.getElementById('orph').hidden"), true)
+    assert.equal(await ev("document.getElementById('orph-pop').hidden"), true)
+  })
   await step('no JavaScript errors were logged', async () => { assert.deepEqual(errors, []) })
 
   const shot = await cdp('Page.captureScreenshot', { format: 'png' })
@@ -347,7 +372,10 @@ async function main() {
 
 main().catch((e) => { console.error(e); results.push(['FAIL', 'harness', e]) }).finally(() => {
   try { ws?.close() } catch {}
-  browser?.kill(); server?.kill()
+  // on Windows the process started here hands over to a new Edge process and exits: killing it leaves the browser, its GPU
+  // and renderer processes running (busy with software rendering). Stop every process using this run's profile instead.
+  if (browser && process.platform === 'win32') spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe' OR Name='chrome.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('" + path.join(tmp, 'profile').replace(/'/g, "''") + "') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"], { stdio: 'ignore', timeout: 30000 })
+  browser?.kill(); server?.kill(); web?.kill()
   setTimeout(() => { try { fs.rmSync(tmp, { recursive: true, force: true }) } catch {} }, 500)
   const bad = results.filter((r) => r[0] === 'FAIL')
   console.log(`\n${results.length - bad.length} passed, ${bad.length} failed`)

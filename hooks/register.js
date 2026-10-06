@@ -127,10 +127,11 @@ async function switchModel($, value) {
   await sendInfo($)
 }
 
-// Closes this Claude Code session. First tells the server, then stops the process hosting it.
-// Walks up the process chain until it finds claude/node/bun and stops only that one; if not found, it just removes the agent from the window.
-async function closeSelf($) {
-  await sendNow($, { type: 'session_end' })
+// The process hosting this Claude Code session (its pid), or null if it cannot be found.
+// Walks up the process chain from a helper shell until it finds claude/node/bun/deno. Found once per session.
+let hostPid
+async function hostProcess($) {
+  if (hostPid !== undefined) return hostPid
   const win = (await $.env.get('OS')) === 'Windows_NT'
   try {
     const find = win
@@ -138,8 +139,26 @@ async function closeSelf($) {
       : ['sh', '-c', 'p=$$; for k in 1 2 3 4 5 6; do p=$(ps -o ppid= -p $p | tr -d " "); [ -z "$p" ] && break; n=$(ps -o comm= -p $p); case "$n" in *claude*|*node*|*bun*|*deno*) echo "$p $n"; break;; esac; done']
     const r = await $.process.run(find, { timeoutMs: 15000 })
     const m = /^(\d+)\s+(.+)$/m.exec(String(r.stdout).trim())
-    if (!m || !/node|claude|bun|deno/i.test(m[2])) return
-    await $.process.run(win ? ['taskkill', '/PID', m[1], '/F'] : ['kill', '-9', m[1]], { timeoutMs: 10000 })
+    hostPid = m && /node|claude|bun|deno/i.test(m[2]) ? Number(m[1]) : null
+  } catch {
+    hostPid = null // not available in this environment
+  }
+  return hostPid
+}
+
+// Closes this Claude Code session. First tells the server, then stops the process hosting it together with what it started
+// (dev servers, watchers...), so no port stays open. Vibeship's own server is spared: it is shared by every agent in the window.
+// If the host is not found, it just removes the agent from the window.
+async function closeSelf($) {
+  await sendNow($, { type: 'session_end' })
+  const pid = await hostProcess($)
+  if (!pid) return
+  const win = (await $.env.get('OS')) === 'Windows_NT'
+  try {
+    const kill = win
+      ? ['powershell', '-NoProfile', '-NonInteractive', '-Command', `$all=Get-CimInstance Win32_Process; $q=@(${pid}); $d=@(); for($i=0;$i -lt $q.Count;$i++){ foreach($p in ($all | Where-Object { $_.ParentProcessId -eq $q[$i] })){ $q+=$p.ProcessId; $d+=$p } }; [array]::Reverse($d); foreach($p in $d){ if($p.CommandLine -notmatch 'server[\\\\/]server\\.js'){ Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } }; Stop-Process -Id ${pid} -Force`]
+      : ['sh', '-c', `kids() { for c in $(pgrep -P "$1"); do kids "$c"; echo "$c"; done; }; for c in $(kids ${pid}); do ps -o args= -p "$c" | grep -q 'server/server.js' || kill -9 "$c" 2>/dev/null; done; kill -9 ${pid}`]
+    await $.process.run(kill, { timeoutMs: 15000 })
   } catch {
     // not available in this environment: the agent stays removed from the window but the session continues
   }
@@ -165,10 +184,12 @@ async function sendNow($, body) {
   }
 }
 
+// The tool's arguments: newer Claude Code versions put them on the event itself, older ones under `input`
+const argsOf = (e) => e.input ?? e
 function summaryOf(e) {
-  const i = e.input ?? {}
-  const raw = i.command ?? i.file_path ?? i.path ?? i.url ?? i.query ?? i.pattern ?? ''
-  const t = String(raw || JSON.stringify(i)).replace(/\s+/g, ' ').trim()
+  const i = argsOf(e)
+  const raw = i.command ?? i.file_path ?? i.path ?? i.url ?? i.query ?? i.pattern ?? i.description ?? ''
+  const t = String(raw || (e.input ? JSON.stringify(i) : e.tool ?? '')).replace(/\s+/g, ' ').trim()
   return t.length > 300 ? t.slice(0, 300) + '…' : t
 }
 
@@ -217,7 +238,7 @@ async function askWindow($, e, base) {
 // One finished action for the window's activity feed: what was touched and whether it worked.
 const lineCount = (t) => (typeof t === 'string' && t.length ? t.split('\n').length : 0)
 function activityOf(e, r) {
-  const i = e.input ?? {}
+  const i = argsOf(e)
   const file = i.file_path ?? i.notebook_path ?? null
   const act = { type: 'activity', agentId: e.agentId, tool: String(e.tool ?? ''), kind: statusOf(e.tool), ok: !(r && r.isError), summary: summaryOf(e).slice(0, 160) }
   if (typeof file === 'string') act.file = file
@@ -296,6 +317,7 @@ async function announce($) {
   const cwd = await $.session.cwd()
   send($, { type: 'session_start', label: agentName ?? String(cwd).split(/[\\/]/).pop(), look, loc, cwd: String(cwd) })
   void sendCommandList($)
+  void hostProcess($).then((pid) => { if (pid) send($, { type: 'proc', pid }) }) // so the window can show the servers this agent starts
 }
 
 // ---------- Commands ----------

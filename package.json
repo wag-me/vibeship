@@ -1,0 +1,9 @@
+{
+  "name": "vibeship",
+  "private": true,
+  "description": "Scripts only: Vibeship has no npm dependencies and no build step.",
+  "scripts": {
+    "launch-trailer": "node tools/launch-trailer.js",
+    "record-launch": "node tools/record-launch.js"
+  }
+}

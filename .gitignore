@@ -26,3 +26,6 @@ docs/vibeship-frames/
 # Personal tools and generated videos: kept next to the project, never committed
 /local/
 *.mp4
+
+# Launch trailer renders (tools/record-launch.js)
+docs/trailer/

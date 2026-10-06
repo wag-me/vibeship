@@ -12,9 +12,10 @@ It is a Claude Code *mod* (plugin): every session becomes a little animal that w
 ## What it does
 - **See what your agents are doing**: they read, write, run commands, search the web. Each agent has a species (fox, cat, dog, raccoon, rabbit, bear, bird) and a uniform (captain, engineer, pilot, scientist, medic, explorer, cadet).
 - **Three locations** (Bridge, Engine room, Greenhouse), each with its own agents. Move an agent from its card or by dragging it onto a location's tab (in edit mode).
-- **Chat with your agents** from the window: see the conversation, the state of each message and the reply. You can stop or close an agent.
+- **Chat with your agents** from the window: see the conversation, the state of each message and the reply. You can stop or close an agent. When the window is opened again (even from another folder) or a session is resumed, the latest messages and actions are read back from Claude Code's transcript.
   - Type **`/`** to run slash commands and skills, with suggestions as you type (`/compact`, `/cost`, `/model sonnet`, ...). They run in that session as if typed in the terminal and their output comes back in the chat. A bare `/model` shows a model chooser in the window.
 - **See what was done**: the agent card has a **Recent activity** feed (files written with `+/−` lines, commands run, failures in red) and a **📁 Files** button. Files browses the agent's working folder and previews text files; the ones Claude touched are highlighted, and clicking an activity row opens that file. It is read-only, limited to the working folder, and hides `node_modules`, `.git` and files that usually hold secrets (`.env`, keys).
+- **Servers**: when an agent starts something that listens on a port (`npm run dev`, a Flask app, a database), its card lists it under **🔌 Servers**, with the page title and an **Open ↗** button for web pages. A server still running after its agent's session has ended shows up in the footer as *left running*, with the agent it came from, so it does not keep the port busy unnoticed. Ports are read only while the window is open.
 - **Permissions**: when Claude asks for confirmation, the ship goes on alert and you approve or deny from the window (if you don't answer within ~30 s the question falls back to the terminal). For tools that cannot run commands or change files there is also **Allow all session**, so the same question stops coming back.
 - **Subagents**: a drone leaves the main agent and lands on the launch pad, where the subagent materializes. While its task runs it roams the room: it sits on free sofas and armchairs, goes to look at objects, or takes a stroll. When the task is done it returns with the result.
 - **New agents**: from the *Agent* button pick location, character, uniform and folder (even a **new project**, with optional `git init`) and a terminal with Claude Code opens. Select a work station and press *Add an agent at this station* to have the new agent sit there.
@@ -89,9 +90,12 @@ hooks/register.js                 the mod (events, /vibeship, chat commands, per
 server/server.js                  local server (SSE, commands, permissions, agent launch, stats), no dependencies
 web/                              the 3D window (Three.js, no build step)
   js/                             scene, characters, furniture, effects, audio
+  js/trailer/                     the 30-second launch trailer, played by the window itself (/?trailer)
   vendor/three/                   Three.js (MIT)
 docs/demo.gif                     the animation above
 tools/make-demo.js                regenerates it (`node tools/make-demo.js`, needs Edge or Chrome)
+tools/launch-trailer.js           plays the launch trailer live, for screen capture (`npm run launch-trailer`)
+tools/record-launch.js            records it frame by frame to 1080p30 + soundtrack (`npm run record-launch`, MP4 with ffmpeg)
 tests/                            mod tests, server tests, live window check
 ```
 

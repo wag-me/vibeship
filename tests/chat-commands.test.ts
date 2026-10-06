@@ -106,6 +106,16 @@ test('a finished tool call reaches the window with the file, the lines changed a
   expect(posted.find((p) => p.type === 'activity')).toMatchObject({ tool: 'Edit', kind: 'write', ok: true, file: 'C:/work/proj/a.js', add: 3, del: 1 })
 })
 
+test('the arguments Claude Code puts on the event itself give the activity its summary and file', async ($, on) => {
+  on('tool.call', () => ({ result: {}, text: 'ok' }))
+  const posted = await boot($, on, [])
+  await $.tool.call({ tool: 'Bash', command: 'npm run dev' })
+  await $.tool.call({ tool: 'Write', file_path: 'C:/work/proj/b.js', content: 'a\nb' })
+  const acts = posted.filter((p) => p.type === 'activity')
+  expect(acts[0]).toMatchObject({ tool: 'Bash', summary: 'npm run dev' })
+  expect(acts[1]).toMatchObject({ tool: 'Write', file: 'C:/work/proj/b.js', add: 2 })
+})
+
 test('a failed tool call is reported as failed', async ($, on) => {
   on('tool.call', () => ({ isError: true, result: 'boom', text: 'exit code 1' }))
   const posted = await boot($, on, [])

@@ -154,6 +154,20 @@
   #acts .act.bad .s { color: #c0392b; }
   #acts .plus { color: #2e8b57; font-weight: 800; } #acts .minus { color: #c0392b; font-weight: 800; }
   #acts .none { color: var(--muted); padding: 4px 6px; }
+  #ports-box { margin: 8px 0 0; font-size: 12.5px; }
+  #ports-box[hidden] { display: none; }
+  #ports-box summary { cursor: pointer; font-weight: 800; color: var(--muted); }
+  .port-list .port { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 10px; font-size: 12px; }
+  .port-list .port b { font-variant-numeric: tabular-nums; }
+  .port-list .port .s { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  .port-list .port .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+  .port-list .port .dot.http { background: #2e8b57; }
+  .port-list .port button { border: 2px solid var(--line); background: #fff; border-radius: 999px; padding: 1px 9px; font: inherit; font-size: 11.5px; font-weight: 800; color: var(--ink); cursor: pointer; flex: none; }
+  .port-list .port button:hover, .port-list .port button:focus-visible { background: var(--cream2); }
+  #orph-pop { position: absolute; z-index: 6; left: 14px; bottom: 60px; width: min(420px, calc(100vw - 28px)); max-height: 50vh; overflow: auto; background: var(--cream); border: 4px solid #fff; border-radius: 22px; box-shadow: 0 8px 0 rgba(120,85,40,.25); padding: 4px 14px 12px; animation: pop .2s cubic-bezier(.3,1.6,.5,1); }
+  #orph-pop[hidden] { display: none; }
+  #orph-pop h2 { margin: 0; font-size: 14px; padding: 8px 0 2px; display: flex; align-items: center; justify-content: space-between; }
+  #orph-pop p { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
 
   /* ---- Statistics ---- */
   #stats { position: absolute; z-index: 6; right: 14px; top: 70px; width: min(520px, calc(100vw - 28px)); max-height: calc(100vh - 150px); overflow: auto; background: var(--cream); border: 4px solid #fff; border-radius: 26px; box-shadow: 0 8px 0 rgba(120,85,40,.25); padding: 4px 16px 16px; animation: pop .2s cubic-bezier(.3,1.6,.5,1); }
@@ -297,6 +311,8 @@
   .help .h[data-tip]:hover::after, .help .h[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
   footer .pill.upd { pointer-events: auto; display: inline-flex; gap: 6px; align-items: center; background: var(--sun); padding: 2px 6px 2px 12px; }
   footer .pill.upd[hidden] { display: none; }
+  footer .pill.orph { pointer-events: auto; cursor: pointer; font: inherit; font-size: 12.5px; color: var(--ink); background: #fff3c4; }
+  footer .pill.orph[hidden] { display: none; }
   .upd button { border: 0; background: transparent; font: inherit; font-weight: 900; color: var(--ink); padding: 2px 0; }
   .upd #upd-x { width: 20px; height: 20px; border-radius: 50%; font-size: 11px; }
   .upd #upd-x:hover { background: #fff; }
@@ -416,6 +432,12 @@
     </div>
   </section>
 
+  <section id="orph-pop" hidden aria-label="Servers left running">
+    <h2><span>🔌 Servers left running</span><button class="btn sq" id="orph-close" aria-label="Close"><span class="ic">✕</span></button></h2>
+    <p>Their agent's session has ended, but they are still listening. Stop them from a terminal if you no longer need them.</p>
+    <div id="orph-list" class="port-list"></div>
+  </section>
+
   <div id="card" hidden role="dialog" aria-label="Agent card">
     <button class="btn sq x" id="card-close" aria-label="Close"><span class="ic">✕</span></button>
     <button class="btn sq rn" id="card-rename" type="button" aria-label="Rename" data-tip="Rename"><span class="ic">✏️</span></button>
@@ -424,6 +446,7 @@
     <div class="st"><span class="big" id="card-ic"></span><span id="card-st"></span></div>
     <div class="chat" id="chat" aria-live="polite" aria-label="Conversation"></div>
     <div id="atts" aria-label="Attachments" hidden></div>
+    <details id="ports-box" open hidden><summary>🔌 Servers</summary><div id="ports" class="port-list"></div></details>
     <details id="acts-box" open><summary>🧾 Recent activity</summary><div id="acts" aria-live="polite"></div></details>
     <div id="cmdlist" role="listbox" aria-label="Slash commands" hidden></div>
     <form id="card-form" autocomplete="off">
@@ -457,6 +480,7 @@
   <footer>
     <span class="pill" id="conn">waiting for the server…</span>
     <span class="pill" id="count"></span>
+    <button type="button" class="pill orph" id="orph" hidden aria-expanded="false" aria-controls="orph-pop"></button>
     <span class="pill upd" id="upd" hidden><button type="button" id="upd-how" title="Copy the update commands"><span id="upd-text"></span> · how to update</button><button type="button" id="upd-x" aria-label="Hide this notice">✕</button></span>
     <span class="pill help" role="group" aria-label="Controls">
       <span class="h" tabindex="0" data-tip="Click: select" aria-label="Click: select">👆</span>

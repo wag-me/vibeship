@@ -2,7 +2,7 @@
 // They start the real server on a free port with a temporary data folder and a fake Claude Code config folder.
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -389,4 +389,124 @@ test('new version check: a newer published version is announced, an equal or old
   assert.equal(await run(current), undefined)
   assert.equal(await run('0.0.1'), undefined)
   assert.equal(await run('not-a-version'), undefined)
+})
+
+test('servers: a port opened by a process the session started shows under its agent, and stays as an orphan after the session ends', { skip: process.platform !== 'win32' && spawnSync('sh', ['-c', 'command -v lsof']).status !== 0 && 'lsof not available' }, async () => {
+  // this test process plays the Claude Code session: the web server it starts is that session's server
+  const srv = spawn(process.execPath, ['-e', "require('http').createServer((q, r) => { r.setHeader('Content-Type', 'text/html'); r.end('<html><head><title>My &amp; app</title></head></html>') }).listen(0, '127.0.0.1', function () { console.log(this.address().port) })"], { stdio: ['ignore', 'pipe', 'ignore'] })
+  try {
+    const port = Number(await new Promise((res) => srv.stdout.once('data', (d) => res(String(d).trim()))))
+    // reads the stream (keeping a window "open", so the server scans) until a snapshot matches
+    async function until(pred, ms = 25000) {
+      const ctl = new AbortController()
+      const timer = setTimeout(() => ctl.abort(), ms)
+      try {
+        const reader = (await fetch(base + '/stream', { signal: ctl.signal })).body.getReader()
+        let buf = ''
+        for (;;) {
+          const { value } = await reader.read()
+          buf += Buffer.from(value).toString()
+          let i
+          while ((i = buf.indexOf('\n\n')) >= 0) {
+            const snap = JSON.parse(buf.slice(buf.indexOf('data: ') + 6, i))
+            buf = buf.slice(i + 2)
+            if (pred(snap)) return snap
+          }
+        }
+      } finally { clearTimeout(timer); ctl.abort() }
+    }
+    await event({ type: 'session_start', session: 'srv', label: 'webby' })
+    await event({ type: 'proc', session: 'srv', pid: process.pid })
+    let snap = await until((s) => (s.ports.srv || []).some((p) => p.port === port))
+    const p = snap.ports.srv.find((x) => x.port === port)
+    assert.equal(p.http, true)
+    assert.equal(p.title, 'My & app')
+    assert.equal(p.url, 'http://localhost:' + port + '/')
+    assert.equal(p.pid, undefined) // process ids are not sent to the window
+    await event({ type: 'session_end', session: 'srv' })
+    snap = await until((s) => s.orphans.some((o) => o.port === port))
+    assert.equal(snap.orphans.find((o) => o.port === port).from, 'webby')
+    assert.equal(snap.ports.srv, undefined)
+    srv.kill()
+    await until((s) => !s.orphans.some((o) => o.port === port))
+  } finally { srv.kill() }
+})
+
+test('history: a session that shows up rebuilds its chat and activity feed from the end of its transcript', async () => {
+  const id = '99999999-8888-4777-8666-555555555555'
+  const work = path.join(tmp, 'hist-work')
+  fs.mkdirSync(work, { recursive: true })
+  const ts = (s) => new Date(Date.UTC(2026, 0, 1, 10, 0, s)).toISOString()
+  const u = (s, content, extra = {}) => JSON.stringify({ type: 'user', timestamp: ts(s), message: { role: 'user', content }, ...extra })
+  const a = (s, mid, block, extra = {}) => JSON.stringify({ type: 'assistant', timestamp: ts(s), message: { id: mid, role: 'assistant', content: [block] }, ...extra })
+  fs.writeFileSync(path.join(tmp, 'claude', 'projects', 'C--work-demo', id + '.jsonl'), [
+    u(1, 'Make a site'),
+    a(2, 'm1', { type: 'text', text: 'Let me look first.' }),
+    a(2, 'm1', { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm start' } }),
+    u(3, [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }]),
+    a(4, 'm2', { type: 'tool_use', id: 't2', name: 'Edit', input: { file_path: path.join(work, 'a.js'), old_string: 'x', new_string: 'x\ny' } }),
+    u(5, [{ type: 'tool_result', tool_use_id: 't2', content: 'done' }]),
+    a(6, 'm3', { type: 'text', text: 'Done: the site is up.' }),
+    a(6, 'm3', { type: 'text', text: 'Done: the site is up.' }), // the same part written twice while streaming
+    u(7, '<command-name>/cost</command-name>'),
+    u(8, [{ type: 'text', text: '[Request interrupted by user]' }]),
+    u(9, 'Thanks'),
+    u(10, 'a subagent prompt', { isSidechain: true }),
+    a(11, 'm4', { type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'bad' } }),
+    u(12, [{ type: 'tool_result', tool_use_id: 't3', is_error: true, content: [{ type: 'text', text: 'Exit code 1\nnot found' }] }]),
+    a(13, 'm5', { type: 'text', text: 'You are welcome' }),
+  ].join('\n'))
+  await event({ type: 'session_start', session: id, label: 'hist', cwd: work })
+  const snap = await snapshot()
+  assert.deepEqual(snap.chat[id].map((m) => [m.role, m.text, m.state]), [['user', 'Make a site', 'done'], ['assistant', 'Done: the site is up.', 'answer'], ['user', 'Thanks', 'done'], ['assistant', 'You are welcome', 'answer']])
+  assert.equal(snap.chat[id][0].ts, Date.parse(ts(1)))
+  assert.deepEqual(snap.acts[id].map((x) => [x.tool, x.kind, x.ok, x.rel ?? x.summary, x.add, x.del, x.error]), [
+    ['Bash', 'run', true, 'npm start', undefined, undefined, undefined],
+    ['Edit', 'write', true, 'a.js', 2, 1, undefined],
+    ['Bash', 'run', false, 'bad', undefined, undefined, 'Exit code 1 not found'],
+  ])
+  // shown again (e.g. after a rename) it is not loaded twice
+  await event({ type: 'session_start', session: id, label: 'hist' })
+  assert.equal((await snapshot()).chat[id].length, 4)
+  await event({ type: 'session_end', session: id })
+})
+
+test('servers: when the shell that started a server has exited, it goes to the agent that was running a command then', { skip: process.platform !== 'win32' && 'the process chain is cut differently outside Windows' }, async () => {
+  const host = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1e6)'], { stdio: 'ignore' }) // the session's process: not an ancestor of the server
+  let srvPid = 0
+  try {
+    await event({ type: 'session_start', session: 'cut', label: 'cutter' })
+    await event({ type: 'proc', session: 'cut', pid: host.pid })
+    await event({ type: 'tool', session: 'cut', status: 'run', detail: 'npx http-server' })
+    // a shell starts the server in the background and exits at once
+    const site = "require('http').createServer((q, r) => r.end('hi')).listen(0, '127.0.0.1', function () { require('fs').writeFileSync(process.argv[1], this.address().port + ' ' + process.pid) })"
+    const out = path.join(tmp, 'cut-port')
+    const shell = spawn(process.execPath, ['-e', 'require("child_process").spawn(process.execPath, ["-e", ' + JSON.stringify(site) + ', ' + JSON.stringify(out) + '], { detached: true, stdio: "ignore" }).unref()'], { stdio: 'ignore' })
+    await new Promise((r) => shell.on('exit', r))
+    await event({ type: 'activity', session: 'cut', tool: 'Bash', kind: 'run', ok: true, summary: 'npx http-server' })
+    for (let i = 0; i < 50 && !fs.existsSync(out); i++) await new Promise((r) => setTimeout(r, 100))
+    const [port, pid] = fs.readFileSync(out, 'utf8').split(' ').map(Number)
+    srvPid = pid
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), 25000)
+    try {
+      const reader = (await fetch(base + '/stream', { signal: ctl.signal })).body.getReader()
+      let buf = '', found = null
+      while (!found) {
+        const { value } = await reader.read()
+        buf += Buffer.from(value).toString()
+        let i
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const snap = JSON.parse(buf.slice(buf.indexOf('data: ') + 6, i))
+          buf = buf.slice(i + 2)
+          found = (snap.ports.cut || []).find((p) => p.port === port) || found
+        }
+      }
+      assert.equal(found.http, true)
+    } finally { clearTimeout(timer); ctl.abort() }
+    await event({ type: 'session_end', session: 'cut' })
+  } finally {
+    host.kill()
+    if (srvPid) try { process.kill(srvPid) } catch {}
+  }
 })

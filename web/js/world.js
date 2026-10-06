@@ -98,6 +98,8 @@ const MODES = {
   normal: { hemiS: C('#c9dcff'), hemiG: C('#7d89b3'), hemiI: 1.3,  sun: C('#eaf2ff'), sunI: 2.2, sunPos: [9, 20, 11], exp: 1.08, night: 0.35, accent: C('#4de0ff') },
   alert:  { hemiS: C('#ffa89c'), hemiG: C('#8a4a55'), hemiI: 1.15, sun: C('#ff9080'), sunI: 1.8, sunPos: [9, 20, 11], exp: 1.05, night: 1.0,  accent: C('#ff4a4a') },
   dim:    { hemiS: C('#9a92e0'), hemiG: C('#5f5390'), hemiI: 1.0,  sun: C('#bdaeff'), sunI: 1.2, sunPos: [6, 18, 12], exp: 1.2,  night: 1.0,  accent: C('#c78bff') },
+  // warm key light over the cool deck, used by the launch trailer (not in the lights button cycle)
+  cinema: { hemiS: C('#dce3ff'), hemiG: C('#8a7dae'), hemiI: 1.2,  sun: C('#ffdcae'), sunI: 2.6, sunPos: [12, 17, 8],  exp: 1.12, night: 0.55, accent: C('#4de0ff') },
 }
 export const TOD_ORDER = ['auto', 'normal', 'alert', 'dim']
 
@@ -451,18 +453,20 @@ export function createWorld(scene, renderer) {
   // ----- Light modes -----
   let mode = 'auto'
   let alert = false
+  let base = 'normal' // what 'auto' shows when nobody is waiting for a permission
   let target = MODES.normal
   const cur = {
     hemiS: MODES.normal.hemiS.clone(), hemiG: MODES.normal.hemiG.clone(), sun: MODES.normal.sun.clone(), accent: MODES.normal.accent.clone(),
     sunI: 2.2, hemiI: 1.3, exp: 1.08, night: 0.35, sunPos: new THREE.Vector3(...MODES.normal.sunPos),
   }
   function resolveTarget() {
-    const name = mode === 'auto' ? (alert ? 'alert' : 'normal') : mode
+    const name = mode === 'auto' ? (alert ? 'alert' : base) : mode
     target = MODES[name]
     return name
   }
   resolveTarget()
   function setTOD(m) { mode = m; return resolveTarget() }
+  function setBaseLight(m) { if (MODES[m]) { base = m; resolveTarget() } }
   function cycleTOD() { const i = TOD_ORDER.indexOf(mode); mode = TOD_ORDER[(i + 1) % TOD_ORDER.length]; resolveTarget(); return mode }
   function setAlert(b) { if (alert !== b) { alert = b; resolveTarget() } }
 
@@ -500,5 +504,5 @@ export function createWorld(scene, renderer) {
     }
   }
 
-  return { root, floor, setScene, setTOD, cycleTOD, setAlert, update, get tod() { return mode }, get scene() { return sceneName } }
+  return { root, floor, setScene, setTOD, setBaseLight, cycleTOD, setAlert, update, get tod() { return mode }, get scene() { return sceneName } }
 }

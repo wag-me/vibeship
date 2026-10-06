@@ -5,7 +5,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const crypto = require('crypto')
-const { spawn, spawnSync } = require('child_process')
+const { spawn, spawnSync, execFile } = require('child_process')
 
 const PORT = Number(process.env.AGENT_OFFICE_PORT || 47890)
 const WEB = path.join(__dirname, '..', 'web')
@@ -76,6 +76,11 @@ const roots = new Map() // session -> working folder (what the Files panel may b
 const acts = new Map() // session -> [finished actions] { id, ts, agent, tool, kind, ok, summary, file?, add?, del?, error? }
 const perms = new Map() // id -> pending permission request
 const permWaiters = new Map() // id -> [{ res, timer }]
+const procs = new Map() // session -> pid of the process hosting it
+const runs = new Map() // session -> recent commands [{ start, end }] (end 0 while running): who was running what, and when
+let ports = {} // session -> servers its agent started [{ port, pid, addr, proc, http, title, url }]
+let orphans = [] // servers still listening after the session that started them has ended (same shape, plus from)
+const leftBy = new Map() // "pid:port" -> name of the agent whose session ended while that server was running
 const rid = () => crypto.randomBytes(6).toString('hex')
 const json = (res, obj, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)) }
 function addChat(session, msg) {
@@ -95,7 +100,9 @@ function snapshot() {
   const a = {}
   for (const [k, v] of acts) a[k] = v.slice(-30)
   const files = Object.fromEntries([...roots].map(([k, v]) => [k, path.basename(v) || v]))
-  return JSON.stringify({ agents: list, layout, chat: c, perms: [...perms.values()], acts: a, roots: files, info: Object.fromEntries(infos), update })
+  const pub = ({ pid, addr, ...p }) => p // process ids and addresses stay in the server
+  const sp = Object.fromEntries(Object.entries(ports).map(([k, v]) => [k, v.map(pub)]))
+  return JSON.stringify({ agents: list, layout, chat: c, perms: [...perms.values()], acts: a, roots: files, info: Object.fromEntries(infos), update, ports: sp, orphans: orphans.map(pub) })
 }
 // Events often come in bursts (several tool calls, a turn ending): they are sent to the windows as one snapshot.
 let broadcastTimer = null
@@ -178,23 +185,27 @@ function handleEvent(ev) {
     case 'session_start':
       mainOf(session, ev.label, ev.look, ev.loc)
       if (typeof ev.cwd === 'string' && path.isAbsolute(ev.cwd)) roots.set(session, path.resolve(ev.cwd))
+      if (!historyTried.has(session)) { historyTried.add(session); loadHistory(session) }
       break
-    case 'activity': {
-      const a = resolve(session, ev.agentId)
-      const n = (x) => (Number.isFinite(x) ? Math.max(0, Math.min(1e6, Math.floor(x))) : undefined)
-      const list = acts.get(session) || []
-      // the window only needs the path inside the working folder (that is also what the Files panel opens)
-      let rel
-      const root = roots.get(session)
-      if (root && typeof ev.file === 'string') {
-        const r = path.relative(root, path.resolve(root, ev.file))
-        if (r && !r.startsWith('..') && !path.isAbsolute(r)) rel = r.split(path.sep).join('/')
+    case 'proc': // the process hosting the session: whatever it starts that listens on a port is this agent's server
+      if (Number.isInteger(ev.pid) && ev.pid > 1 && ev.pid !== process.pid) { procs.set(session, ev.pid); kickScan() }
+      break
+    case 'activity':
+      addActivity(session, ev, now)
+      if (ev.kind === 'run') {
+        const w = [...(runs.get(session) || [])].reverse().find((x) => !x.end)
+        if (w) w.end = now
+        kickScan() // a command may have just started (or stopped) a server
       }
-      list.push({ id: rid(), ts: now, agent: a.name, tool: String(ev.tool || '').slice(0, 40), kind: ['read', 'write', 'run', 'web', 'delegate'].includes(ev.kind) ? ev.kind : 'run', ok: ev.ok !== false, summary: String(ev.summary || '').slice(0, 160), rel, add: n(ev.add), del: n(ev.del), error: ev.error ? String(ev.error).slice(0, 160) : undefined })
-      acts.set(session, list.slice(-60))
       break
-    }
-    case 'session_end':
+    case 'session_end': {
+      // its servers that are still listening become orphans, remembered with the agent that started them
+      const from = agents.get(session + ':main')?.name || 'a closed session'
+      for (const p of ports[session] || []) { leftBy.set(p.pid + ':' + p.port, from); orphans.push({ ...p, from }) }
+      delete ports[session]
+      procs.delete(session)
+      runs.delete(session)
+      kickScan()
       for (const [k, a] of agents) if (a.session === session) agents.delete(k)
       chat.delete(session)
       cmds.delete(session)
@@ -203,6 +214,7 @@ function handleEvent(ev) {
       roots.delete(session)
       for (const [id, p] of perms) if (p.session === session) endPerm(id)
       break
+    }
     case 'prompt_in': // message typed in the terminal
       if (typeof ev.text === 'string' && ev.text.trim()) addChat(session, { role: 'user', text: ev.text.slice(0, 4000), state: 'working', via: 'terminal' })
       break
@@ -245,6 +257,7 @@ function handleEvent(ev) {
       endPerm(String(ev.id))
       break
     case 'tool': {
+      if (ev.status === 'run') { const l = runs.get(session) || []; l.push({ start: now, end: 0 }); runs.set(session, l.slice(-30)) }
       const a = resolve(session, ev.agentId)
       a.status = ev.status || 'run'
       a.detail = ev.detail || ''
@@ -284,6 +297,255 @@ function handleEvent(ev) {
   broadcast()
 }
 
+// One finished action in a session's activity feed (from the mod, or rebuilt from the transcript)
+function addActivity(session, ev, ts) {
+  const a = resolve(session, ev.agentId)
+  const n = (x) => (Number.isFinite(x) ? Math.max(0, Math.min(1e6, Math.floor(x))) : undefined)
+  const list = acts.get(session) || []
+  // the window only needs the path inside the working folder (that is also what the Files panel opens)
+  let rel
+  const root = roots.get(session)
+  if (root && typeof ev.file === 'string') {
+    const r = path.relative(root, path.resolve(root, ev.file))
+    if (r && !r.startsWith('..') && !path.isAbsolute(r)) rel = r.split(path.sep).join('/')
+  }
+  list.push({ id: rid(), ts, agent: a.name, tool: String(ev.tool || '').slice(0, 40), kind: ['read', 'write', 'run', 'web', 'delegate'].includes(ev.kind) ? ev.kind : 'run', ok: ev.ok !== false, summary: String(ev.summary || '').slice(0, 160), rel, add: n(ev.add), del: n(ev.del), error: ev.error ? String(ev.error).slice(0, 160) : undefined })
+  acts.set(session, list.slice(-60))
+}
+
+// ---------- Conversation history from the transcripts ----------
+// The chat and the activity feed live in this server's memory: a server started later (the window closed and opened
+// again, maybe from another folder) would show them empty. So the first time a session shows up, both are rebuilt from
+// the end of its Claude Code transcript, which also holds what happened while no window was open.
+const historyTried = new Set()
+const HISTORY_TAIL = 2 * 1024 * 1024
+function transcriptOf(id) {
+  if (!SESSION_ID.test(id)) return null
+  let dirs = []
+  try { dirs = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true }).filter((e) => e.isDirectory()) } catch { return null }
+  for (const d of dirs) { const f = path.join(PROJECTS_DIR, d.name, id + '.jsonl'); if (fs.existsSync(f)) return f }
+  return null
+}
+// the same kinds and summaries the mod sends for live tool calls
+function kindOf(tool) {
+  if (['Read', 'Grep', 'Glob'].includes(tool)) return 'read'
+  if (['Edit', 'Write', 'NotebookEdit'].includes(tool)) return 'write'
+  if (tool === 'WebSearch' || tool === 'WebFetch') return 'web'
+  if (tool === 'Task' || tool === 'Agent') return 'delegate'
+  return 'run'
+}
+const lines = (t) => (typeof t === 'string' && t.length ? t.split('\n').length : 0)
+const resultText = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.filter((x) => x && x.type === 'text').map((x) => x.text).join(' ') : '')
+function loadHistory(session) {
+  const file = transcriptOf(session)
+  if (!file) return
+  let text
+  try {
+    const st = fs.statSync(file)
+    const fd = fs.openSync(file, 'r')
+    try { text = readSlice(fd, Math.max(0, st.size - HISTORY_TAIL), Math.min(st.size, HISTORY_TAIL)) } finally { fs.closeSync(fd) }
+  } catch { return }
+  const msgs = [], done = [], calls = new Map(), seen = new Set(), ran = []
+  let reply = '', replyTs = 0
+  const endTurn = () => { if (reply.trim()) msgs.push({ role: 'assistant', text: reply.trim().slice(0, 4000), state: 'answer', ts: replyTs }); reply = '' }
+  for (const line of text.split('\n')) {
+    if (!line.includes('"message"')) continue
+    let o
+    try { o = JSON.parse(line) } catch { continue } // the first line of the slice is usually cut
+    if (o.isSidechain || !o.message) continue // a subagent's own work
+    const ts = Date.parse(o.timestamp) || Date.now()
+    const content = o.message.content
+    if (o.type === 'user') {
+      for (const c of Array.isArray(content) ? content : []) {
+        const call = c && c.type === 'tool_result' && calls.get(c.tool_use_id)
+        if (!call) continue
+        calls.delete(c.tool_use_id)
+        const i = call.input
+        const raw = i.command ?? i.file_path ?? i.path ?? i.url ?? i.query ?? i.pattern ?? i.description ?? ''
+        const ev = { tool: call.tool, kind: kindOf(call.tool), ok: !c.is_error, summary: String(raw).replace(/\s+/g, ' ').trim().slice(0, 160) }
+        if (typeof (i.file_path ?? i.notebook_path) === 'string') ev.file = i.file_path ?? i.notebook_path
+        if (call.tool === 'Edit') { ev.add = lines(i.new_string); ev.del = lines(i.old_string) } else if (call.tool === 'Write') ev.add = lines(i.content)
+        if (c.is_error) ev.error = resultText(c.content).replace(/\s+/g, ' ').slice(0, 160)
+        done.push([ev, ts])
+        if (ev.kind === 'run' && ev.ok) ran.push({ start: call.ts, end: ts })
+      }
+      const t = o.isMeta ? '' : firstText(content)
+      if (t && !/^\[Request interrupted/.test(t)) { endTurn(); msgs.push({ role: 'user', text: t.slice(0, 4000), state: 'done', via: 'terminal', ts }) }
+    } else if (o.type === 'assistant' && Array.isArray(content)) {
+      content.forEach((c) => {
+        // a message may be written more than once while it streams: each of its parts counts once
+        if (!c) return
+        const sig = (o.message.id || o.uuid) + ':' + (c.id || c.type + ':' + String(c.text || '').slice(0, 200))
+        if (seen.has(sig)) return
+        seen.add(sig)
+        if (c.type === 'text' && c.text) { reply += (reply ? '\n\n' : '') + c.text; replyTs = ts }
+        else if (c.type === 'tool_use') { reply = ''; calls.set(c.id, { tool: String(c.name), input: c.input || {}, ts }) } // only the text after the last tool is the answer
+      })
+    }
+  }
+  endTurn()
+  if (!(chat.get(session) || []).length && msgs.length) chat.set(session, msgs.slice(-24).map((m) => ({ id: rid(), ...m })))
+  if (!(acts.get(session) || []).length) for (const [ev, ts] of done.slice(-30)) addActivity(session, ev, ts)
+  // when its commands ran: a server one of them started before this server was running can still be told apart
+  if (!(runs.get(session) || []).length && ran.length) { runs.set(session, ran.slice(-30)); kickScan() }
+}
+
+// ---------- Servers the agents started (listening ports) ----------
+// Every few seconds, only while a window is open, the listening TCP ports and the process tree are read with one system
+// command. A port belongs to an agent when the process listening on it descends from the process hosting that session.
+// Each new port is asked for "/" once: if it answers HTTP, its page title is kept and the window offers to open it.
+const SCAN_MS = 6000
+// On Windows one PowerShell stays open while windows are: starting one costs ~2.5 s of CPU, a scan inside it ~0.03 s.
+// It scans once per line it reads and quits when its input closes (no window for a while, or this server has ended).
+const PS_LOOP = "$ErrorActionPreference='SilentlyContinue'; while ($null -ne [Console]::In.ReadLine()) { $o = @(Get-NetTCPConnection -State Listen | ForEach-Object { 'L ' + $_.LocalPort + ' ' + $_.OwningProcess + ' ' + $_.LocalAddress }) + @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name,CreationDate | ForEach-Object { 'P ' + $_.ProcessId + ' ' + $_.ParentProcessId + ' ' + $(if ($_.CreationDate) { ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } else { 0 }) + ' ' + $_.Name }); [Console]::Out.Write(($o -join [char]10) + [char]10 + 'END' + [char]10); [Console]::Out.Flush() }"
+let scanner = null // { proc, buf, done }
+function stopScanner() { if (scanner) { scanner.proc.stdin.end(); scanner.proc.kill(); scanner = null } }
+function readListeners() {
+  if (!WIN) {
+    return new Promise((resolve) => execFile('sh', ['-c', 'lsof -nP -iTCP -sTCP:LISTEN -F pn 2>/dev/null; echo ---; ps -A -o pid= -o ppid= -o etime= -o comm='], { timeout: 15000, maxBuffer: 16e6 }, (err, out) => resolve(out ? parseListeners(String(out), false) : null)))
+  }
+  return new Promise((resolve) => {
+    if (!scanner) {
+      const proc = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', PS_LOOP], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] })
+      const s = { proc, buf: '', done: null }
+      proc.stdout.on('data', (d) => {
+        s.buf += d
+        const i = s.buf.indexOf('\nEND\n')
+        if (i >= 0 && s.done) { const out = s.buf.slice(0, i); s.buf = s.buf.slice(i + 5); s.done(parseListeners(out, true)) }
+      })
+      proc.on('error', () => { if (scanner === s) scanner = null; s.done?.(null) })
+      proc.on('exit', () => { if (scanner === s) scanner = null; s.done?.(null) })
+      proc.stdin.on('error', () => {})
+      scanner = s
+    }
+    const s = scanner
+    const timer = setTimeout(() => { if (scanner === s) stopScanner(); finish(null) }, 15000) // stuck: start a fresh one next time
+    const finish = (r) => { clearTimeout(timer); s.done = null; resolve(r) }
+    s.done = finish
+    s.proc.stdin.write('\n')
+  })
+}
+// -> { listen: [{ port, pid, addr }], parent: pid -> ppid, name: pid -> process name, born: pid -> start time (ms) }
+function parseListeners(out, win) {
+  const listen = [], parent = new Map(), name = new Map(), born = new Map()
+  if (win) {
+    for (const line of out.split(/\r?\n/)) {
+      const l = /^L (\d+) (\d+) (.*)$/.exec(line.trim())
+      if (l) { listen.push({ port: +l[1], pid: +l[2], addr: l[3] }); continue }
+      const p = /^P (\d+) (\d+) (\d*) (.*)$/.exec(line.trim())
+      if (p) { parent.set(+p[1], +p[2]); born.set(+p[1], +p[3] || 0); name.set(+p[1], p[4]) }
+    }
+  } else {
+    const [lsof, ps = ''] = out.split(/^---$/m)
+    let pid = 0
+    for (const line of lsof.split('\n')) {
+      if (line[0] === 'p') pid = +line.slice(1)
+      else if (line[0] === 'n') { const i = line.lastIndexOf(':'); const port = +line.slice(i + 1); if (pid && port) listen.push({ port, pid, addr: line.slice(1, i).replace(/^\[|\]$/g, '') }) }
+    }
+    const now = Date.now()
+    for (const line of ps.split('\n')) {
+      const m = /^\s*(\d+)\s+(\d+)\s+(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)\s+(.*)$/.exec(line) // etime is [[dd-]hh:]mm:ss
+      if (m) { parent.set(+m[1], +m[2]); born.set(+m[1], now - ((+m[3] || 0) * 86400 + (+m[4] || 0) * 3600 + +m[5] * 60 + +m[6]) * 1000); name.set(+m[1], path.basename(m[7].trim())) }
+    }
+  }
+  return { listen, parent, name, born }
+}
+// The address a browser on this machine reaches the server at
+function urlOf(port, addr) {
+  const any = !addr || addr === '0.0.0.0' || addr === '::' || addr === '*'
+  const host = any || addr === '127.0.0.1' || addr === '::1' ? 'localhost' : addr.includes(':') ? '[' + addr + ']' : addr
+  return 'http://' + host + ':' + port + '/'
+}
+const probes = new Map() // "pid:port" -> { http, title, at }
+const ownedBy = new Map() // "pid:port" -> session the server was found under
+async function probe(port, addr) {
+  const host = addr === '::1' ? '[::1]' : !addr || addr === '0.0.0.0' || addr === '::' || addr === '*' || addr === '127.0.0.1' ? '127.0.0.1' : addr.includes(':') ? '[' + addr + ']' : addr
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 2500)
+  try {
+    const r = await fetch('http://' + host + ':' + port + '/', { signal: ctl.signal, headers: { Accept: 'text/html' } })
+    let title = ''
+    if (/html/i.test(r.headers.get('content-type') || '')) {
+      // only the head of the page is needed: stop reading after 64 KB (a dev server may also stream forever)
+      const reader = r.body.getReader()
+      let buf = ''
+      while (buf.length < 65536 && !/<\/title>/i.test(buf)) { const { value, done } = await reader.read(); if (done) break; buf += Buffer.from(value).toString('utf8') }
+      reader.cancel().catch(() => {})
+      const m = /<title[^>]*>([^<]*)/i.exec(buf)
+      if (m) title = m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim().slice(0, 80)
+    } else r.body?.cancel().catch(() => {})
+    return { http: true, title }
+  } catch {
+    return { http: false, title: '' } // not HTTP (a database, a socket server...) or not answering yet
+  } finally { clearTimeout(timer) }
+}
+
+let scanning = false, kickTimer = null
+// A command just ran or a session came or went: look again shortly, without waiting for the next round
+function kickScan() {
+  clearTimeout(kickTimer)
+  kickTimer = setTimeout(() => void scanPorts(), 1500)
+}
+async function scanPorts() {
+  if (scanning || !clients.size || (!procs.size && !leftBy.size && !orphans.length)) return
+  scanning = true
+  try {
+    const r = await readListeners()
+    if (!r) return
+    const hosts = new Map([...procs].map(([s, pid]) => [pid, s]))
+    const born = (pid) => r.born.get(pid) || 0
+    // the parent of pid if it is still running, else 0 (on Windows its id may even belong to a newer process by now)
+    const liveParent = (pid) => { const p = r.parent.get(pid); return p && r.parent.has(p) && !(born(p) > born(pid)) ? p : 0 }
+    const ownerOf = (pid) => { for (let p = liveParent(pid), i = 0; p && i < 40; p = liveParent(p), i++) if (hosts.has(p)) return hosts.get(p) }
+    // When the chain is cut (the shell that started a server in the background has exited), what is left of it was
+    // started by whichever agent was running a command at that moment, if only one was.
+    const guessOwner = (pid) => {
+      let top = pid
+      for (let i = 0; i < 40; i++) { const p = liveParent(top); if (!p || p === 1) break; top = p }
+      const cut = WIN ? r.parent.get(top) > 4 && !liveParent(top) : r.parent.get(top) === 1 // 0 and 4 are Windows' own roots
+      const t = born(top)
+      if (!cut || !t) return
+      const hit = [...procs.keys()].filter((s) => (runs.get(s) || []).some((w) => t >= w.start - 2000 && t <= (w.end || Math.min(Date.now(), w.start + 300000)) + 2000))
+      return hit.length === 1 ? hit[0] : undefined
+    }
+    const seen = new Map() // "pid:port" -> listener (the same port is often listened on both IPv4 and IPv6)
+    for (const l of r.listen) {
+      if (l.pid === process.pid || l.port === PORT || hosts.has(l.pid)) continue // Vibeship itself and Claude Code's own ports
+      const k = l.pid + ':' + l.port
+      if (!seen.has(k) || seen.get(k).addr !== '127.0.0.1') seen.set(k, l)
+    }
+    const nextPorts = {}, nextOrphans = []
+    const now = Date.now()
+    for (const [k, l] of seen) {
+      // once found, a server stays its agent's even if the chain breaks later (e.g. the shell that started it exits)
+      let session = ownerOf(l.pid) || (!ownedBy.has(k) && !leftBy.has(k) ? guessOwner(l.pid) : undefined)
+      if (session) ownedBy.set(k, session)
+      else if (procs.has(ownedBy.get(k))) session = ownedBy.get(k)
+      const from = session ? null : leftBy.get(k)
+      if (!session && !from) continue
+      let pr = probes.get(k)
+      if (!pr || (!pr.http && now - pr.at > 20000)) { pr = { ...(await probe(l.port, l.addr)), at: now }; probes.set(k, pr) } // a server may still be starting: ask again later
+      const item = { port: l.port, pid: l.pid, addr: l.addr, proc: String(r.name.get(l.pid) || '').slice(0, 40), http: pr.http, title: pr.title, url: urlOf(l.port, l.addr) }
+      if (session) (nextPorts[session] ||= []).push(item)
+      else nextOrphans.push({ ...item, from })
+    }
+    for (const k of leftBy.keys()) if (!seen.has(k)) leftBy.delete(k)
+    for (const k of probes.keys()) if (!seen.has(k)) probes.delete(k)
+    for (const k of ownedBy.keys()) if (!seen.has(k)) ownedBy.delete(k)
+    for (const v of Object.values(nextPorts)) v.sort((a, b) => a.port - b.port)
+    nextOrphans.sort((a, b) => a.port - b.port)
+    const changed = JSON.stringify([nextPorts, nextOrphans]) !== JSON.stringify([ports, orphans])
+    ports = nextPorts
+    orphans = nextOrphans
+    if (changed) broadcast()
+  } finally { scanning = false }
+}
+let lastClientAt = 0
+setInterval(() => {
+  if (clients.size) lastClientAt = Date.now()
+  else if (scanner && Date.now() - lastClientAt > 60000) stopScanner() // no window for a minute: free the PowerShell
+  void scanPorts()
+}, SCAN_MS)
 
 // ---------- Launching new agents (new terminal with the mod) ----------
 const WIN = process.platform === 'win32'
@@ -637,6 +899,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
     res.write('data: ' + snapshot() + '\n\n')
     clients.add(res)
+    kickScan() // the ports may be stale: nothing is scanned while no window is open
     req.on('close', () => clients.delete(res))
     return
   }

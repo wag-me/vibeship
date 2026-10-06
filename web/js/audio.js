@@ -40,8 +40,8 @@ export const sfx = {
   remove: () => tone(380, 0.14, 'triangle', 0.07, -220),
 }
 export function isMuted() { return muted }
-export function setMuted(m) {
+export function setMuted(m, persist = true) {
   muted = m
-  try { localStorage.setItem('ao-muted', m ? '1' : '0') } catch {}
+  if (persist) try { localStorage.setItem('ao-muted', m ? '1' : '0') } catch {}
   if (!m) { ac(); sfx.click() }
 }

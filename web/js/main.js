@@ -8,6 +8,9 @@ import { sfx, isMuted, setMuted } from './audio.js'
 import { renderMarkdown, plainText } from './markdown.js'
 
 const $ = (id) => document.getElementById(id)
+// Launch trailer (/?trailer): a scripted, deterministic 30-second film played by this same window (see js/trailer/)
+const CINEMA = new URLSearchParams(location.search).has('trailer')
+let cinematic = null // set by the trailer director: { update(dt) -> dt }
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 const lerp = (a, b, k) => a + (b - a) * k
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d }
@@ -307,7 +310,9 @@ function onAgents(list) {
       ag.lastStatus = a.status
     }
   }
-  $('count').textContent = list.length + (list.length === 1 ? ' resident' : ' residents')
+  // the crew are the sessions; subagents are counted apart, so 4 sessions with 2 missions out read "4 residents · 2 subagents"
+  const subs = list.filter((a) => a.kind === 'sub').length, mains = list.length - subs
+  $('count').textContent = mains + (mains === 1 ? ' resident' : ' residents') + (subs ? ' · ' + subs + (subs === 1 ? ' subagent' : ' subagents') : '')
   updateSceneButtons()
   if (selected?.kind === 'agent') updateCard()
 }
@@ -1598,6 +1603,8 @@ function updateCard(focus) {
   $('card-files').style.display = isMain ? '' : 'none'
   actsSig = ''
   renderActs()
+  portsSig = ''
+  renderPorts()
   renderChat(!!focus)
   if (focus && isMain) $('card-text').focus({ preventScroll: true })
 }
@@ -1632,6 +1639,46 @@ function renderActs() {
   }))
 }
 setInterval(() => { actsSig = ''; if (!$('card').hidden) renderActs() }, 15000) // keeps the "2m ago" labels fresh
+
+// ---------- Servers: ports the agents are listening on ----------
+let portsData = {} // session -> [{ port, proc, http, title, url }]
+let orphansData = [] // servers left running by sessions that have ended (same, plus from)
+function portRow(p, from) {
+  const row = mk('div', 'port')
+  row.appendChild(mk('span', 'dot' + (p.http ? ' http' : '')))
+  row.appendChild(mk('b', '', ':' + p.port))
+  const s = mk('span', 's', [p.title || (p.http ? 'web page' : 'not a web page'), p.proc, from && 'from ' + from].filter(Boolean).join(' · '))
+  s.title = s.textContent
+  row.appendChild(s)
+  if (p.http) {
+    const b = mk('button', '', 'Open ↗')
+    b.type = 'button'
+    b.title = 'Open ' + p.url + ' in the browser'
+    b.onclick = () => window.open(p.url, '_blank', 'noopener')
+    row.appendChild(b)
+  }
+  return row
+}
+let portsSig = ''
+function renderPorts() {
+  const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
+  const list = ag?.data.kind === 'main' ? portsData[ag.data.session] ?? [] : []
+  $('ports-box').hidden = !list.length // most agents never start a server: no empty section for them
+  const sig = (ag?.key ?? '') + '|' + JSON.stringify(list)
+  if (sig !== portsSig) { portsSig = sig; $('ports').replaceChildren(...list.map((p) => portRow(p))) }
+  const n = orphansData.length
+  $('orph').hidden = !n
+  $('orph').textContent = '🔌 ' + n + (n === 1 ? ' server' : ' servers') + ' left running'
+  if (!n) toggleOrphans(false)
+  $('orph-list').replaceChildren(...orphansData.map((p) => portRow(p, p.from)))
+}
+function toggleOrphans(open) {
+  const el = $('orph-pop')
+  el.hidden = !(open ?? el.hidden)
+  $('orph').setAttribute('aria-expanded', String(!el.hidden))
+}
+$('orph').onclick = () => { toggleOrphans(); sfx.click() }
+$('orph-close').onclick = () => toggleOrphans(false)
 
 let fl = { session: null, rel: '', file: null }
 async function flGet(kind, session, rel) {
@@ -2165,6 +2212,9 @@ function connect() {
     actsData = data.acts ?? {}
     roots = data.roots ?? {}
     renderActs()
+    portsData = data.ports ?? {}
+    orphansData = data.orphans ?? []
+    renderPorts()
     const l = data.layout
     if (!l || !l.scenes || drag?.moved || savePending) return
     const before = JSON.stringify(layout.scenes[keyOf(sceneName)] ?? null)
@@ -2184,12 +2234,13 @@ function connect() {
 // ---------- Main loop ----------
 let T = 0
 function tick(dt) {
+  if (cinematic) dt = cinematic.update(dt) // the trailer owns the clock, the script and the camera
   T += dt
   const now = performance.now()
   const k = 1 - Math.exp(-dt * 6)
   // the camera follows the selected agent
-  moveCamera(dt)
-  if (selected?.kind === 'agent' && !manualCam) {
+  if (!cinematic) moveCamera(dt)
+  if (selected?.kind === 'agent' && !manualCam && !cinematic) {
     const ag = agents.get(selected.key)
     if (ag) { goal.target.set(clamp(ag.char.root.position.x * 0.7, -9, 9), 0.9, clamp(ag.char.root.position.z * 0.7, -6, 6)) }
   }
@@ -2212,26 +2263,35 @@ let pixelRatio = MAX_PIXEL_RATIO, slowFor = 0
 let last = performance.now()
 function loop(ts) {
   requestAnimationFrame(loop)
-  const background = !document.hasFocus()
+  const background = !CINEMA && !document.hasFocus() // the trailer keeps full speed (and full resolution) while it is captured
   if (background && ts - last < 1000 / 24 - 2) return
   const dt = Math.min(0.05, (ts - last) / 1000)
   last = ts
   tick(dt)
-  if (background) return
+  if (background || CINEMA) return
   slowFor = dt > 1 / 40 ? slowFor + dt : Math.max(0, slowFor - dt * 0.5)
   if (slowFor > 2 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); slowFor = 0 }
 }
 
 // ---------- Startup ----------
 sceneName = 'bridge'
-loadLocalLayout()
+if (!CINEMA) loadLocalLayout() // the trailer always films the default ship
 world.setScene('bridge')
 populate(true)
 buildSceneButtons()
 updateTodButton()
 updateSnd()
 setEditMode(false, true)
-connect()
+if (CINEMA) {
+  // instead of the server, the trailer's scripted session feeds the same handlers with the same snapshots
+  setMuted(true, false) // the film has its own soundtrack (with the same sounds)
+  import('./trailer/director.js').then((m) => {
+    cinematic = m.startTrailer({
+      THREE, scene, camera, renderer, world, fx, cam, goal, agents, furn, seatWorld, say, select, applyCamera,
+      onAgents, onPerms, onChat, PAD, DOOR, stage: $('stage'), canvas, render: () => renderer.render(scene, camera),
+    })
+  })
+} else connect()
 requestAnimationFrame(loop)
 
 // Test and debug helpers (also when the browser pauses requestAnimationFrame)

@@ -1,0 +1,91 @@
+/* Launch trailer (/?trailer): a 16:9 stage, the window's interface dimmed until the story needs it, and the film's 2D layer. */
+body.trailer { background: #000; }
+body.trailer #stage {
+  inset: 0; margin: auto; overflow: hidden; background: #03041a;
+  width: min(100vw, 177.7778vh); height: min(56.25vw, 100vh);
+  container-type: size;
+}
+body.trailer header, body.trailer footer { opacity: 0; }
+body.trailer footer .help, body.trailer #upd, body.trailer #tip, body.trailer #toast, body.trailer #seatbar, body.trailer #askbar { display: none !important; }
+body.trailer.c-playing, body.trailer.c-playing * { cursor: none !important; }
+/* the pointer presses "Allow" (and Enter presses "Send") like a real click */
+body.trailer .btn.c-pressed { transform: translateY(3px); box-shadow: 0 0 0 rgba(0, 0, 0, 0); filter: brightness(1.08); }
+/* the agent card shows the conversation: the parts that are not part of this story stay out of the shot */
+body.trailer #card { animation-duration: .32s; }
+body.trailer #card-note, body.trailer #acts-box, body.trailer #card-move, body.trailer #cmenu, body.trailer #atts, body.trailer #cmdlist { display: none !important; }
+body.trailer #card-text { border-color: var(--leaf); }
+
+.c-under, .c-root { position: absolute; inset: 0; pointer-events: none; }
+.c-under { z-index: 1; }
+.c-root { z-index: 30; }
+.c-under > *, .c-root > * { position: absolute; inset: 0; }
+
+/* grade */
+.c-vignette { background: radial-gradient(ellipse 72% 68% at 50% 46%, rgba(3, 4, 22, 0) 52%, rgba(3, 4, 22, .62) 100%); }
+.c-alert { background: radial-gradient(ellipse 78% 72% at 50% 45%, rgba(255, 70, 60, 0) 48%, rgba(255, 70, 60, .42) 100%); opacity: 0; }
+.c-grain { opacity: .055; mix-blend-mode: overlay; background-size: 256px 256px; }
+.c-flash { background: radial-gradient(circle at 50% 50%, rgba(200, 245, 255, .95), rgba(140, 210, 255, 0) 55%); opacity: 0; mix-blend-mode: screen; }
+
+/* the opening terminal */
+.c-term { background: #04050f; }
+.c-lines {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  min-width: 36cqw; font: 500 1.5cqw/1.75 ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+  color: #d6ddf5; white-space: pre;
+}
+.c-lines .l { opacity: 0; }
+.c-lines .dim { color: #56628c; }
+.c-lines .p { color: #7d8bb8; }
+.c-lines .acc { color: #4de0ff; }
+.c-lines .out { font-size: .82em; margin-top: .35em; }
+.c-lines .cur { display: inline-block; width: .58em; height: 1.1em; margin-left: .06em; vertical-align: -.18em; background: #eef3ff; border-radius: .08em; }
+.c-ring { opacity: 0; }
+
+/* the two lines of copy */
+.c-title { display: grid; place-items: center; }
+.c-title h1 {
+  margin: 0; padding-left: .2em; text-align: center; text-transform: uppercase;
+  font: 700 2.9cqw/1.1 'Nunito', 'Varela Round', 'Trebuchet MS', system-ui, sans-serif;
+  color: #fff4dc; letter-spacing: .2em; opacity: 0;
+  text-shadow: 0 0 2.6cqw rgba(255, 190, 110, .28), 0 .2cqw 1cqw rgba(0, 0, 10, .6);
+}
+
+/* the captions: what the person just did */
+.c-cap { inset: auto; left: 3.4cqw; bottom: 15cqh; display: flex; flex-direction: column; gap: .5cqh; opacity: 0; }
+.c-cap small { font: 800 1.05cqw/1 'Nunito', 'Varela Round', 'Trebuchet MS', system-ui, sans-serif; letter-spacing: .28em; text-transform: uppercase; color: #4de0ff; text-shadow: 0 .15cqw .6cqw rgba(0, 0, 10, .7); }
+.c-cap b {
+  font: 900 2.35cqw/1.1 'Nunito', 'Varela Round', 'Trebuchet MS', system-ui, sans-serif; color: #fff4dc; white-space: nowrap;
+  text-shadow: 0 0 2cqw rgba(255, 190, 110, .25), 0 .2cqw 1cqw rgba(0, 0, 10, .75);
+}
+
+/* the brand card */
+.c-brand-bg { opacity: 0; background: linear-gradient(to bottom, rgba(3, 4, 26, .9) 0%, rgba(3, 4, 26, .6) 36%, rgba(3, 4, 26, 0) 64%); }
+.c-brand { display: flex; flex-direction: column; align-items: center; padding-top: 9.5cqh; }
+.c-mark { width: 6.4cqw; height: 6.4cqw; opacity: 0; filter: drop-shadow(0 .5cqw 1.4cqw rgba(77, 224, 255, .25)); }
+.c-word {
+  --sh: 130%;
+  margin-top: 2.6cqh; padding-left: .14em; opacity: 0;
+  font: 900 7.2cqw/1 'Trebuchet MS', 'Nunito', system-ui, sans-serif; letter-spacing: .14em;
+  background-image: linear-gradient(100deg, transparent 42%, rgba(255, 255, 255, .85) 50%, transparent 58%), linear-gradient(90deg, #4de0ff, #8fb4ff 50%, #b08cff);
+  background-size: 260% 100%, 100% 100%; background-position: var(--sh) 0, 0 0; background-repeat: no-repeat;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 .3cqw 1.6cqw rgba(77, 160, 255, .35));
+}
+.c-tagline { margin-top: 2.4cqh; opacity: 0; font: 700 2.15cqw/1.2 'Nunito', 'Varela Round', 'Trebuchet MS', system-ui, sans-serif; color: #fff4dc; letter-spacing: .03em; text-shadow: 0 .2cqw 1cqw rgba(0, 0, 10, .6); }
+
+.c-install { margin-top: 1.6cqh; opacity: 0; font: 700 1.25cqw/1.2 'Nunito', 'Varela Round', 'Trebuchet MS', system-ui, sans-serif; color: #8fb4ff; letter-spacing: .04em; text-shadow: 0 .2cqw 1cqw rgba(0, 0, 10, .7); }
+.c-install span { margin: 0 .5em; color: #56628c; }
+
+/* the pointer */
+.c-pointer { inset: auto; left: 0; top: 0; width: 1.55cqw; height: 1.55cqw; opacity: 0; transform-origin: 18% 12%; filter: drop-shadow(0 .15cqw .25cqw rgba(0, 0, 0, .45)); }
+.c-pointer svg { display: block; width: 100%; height: 100%; }
+
+/* the start card */
+.c-gate { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; background: #04050f; }
+.c-gate .c-card { display: flex; flex-direction: column; align-items: center; gap: 1.2cqh; color: #d6ddf5; text-align: center; }
+.c-gate img { width: 5cqw; height: 5cqw; }
+.c-gate h2 { margin: .6cqh 0 0; font: 900 3cqw/1 'Trebuchet MS', system-ui, sans-serif; letter-spacing: .16em; padding-left: .16em; background: linear-gradient(90deg, #4de0ff, #b08cff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.c-gate p { margin: 0; color: #8d9bd0; font-size: max(13px, 1.1cqw); }
+.c-gate .btn { margin-top: 1.4cqh; font-size: max(15px, 1.25cqw); padding: .7em 1.8em; color: var(--ink); }
+.c-gate small { color: #56628c; font-size: max(11px, .85cqw); }
+.c-gate a { color: #7d8bb8; }

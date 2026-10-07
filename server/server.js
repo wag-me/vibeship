@@ -217,9 +217,17 @@ function handleEvent(ev) {
       unpark(session)
       break
     }
-    case 'prompt_in': // message typed in the terminal
-      if (typeof ev.text === 'string' && ev.text.trim()) addChat(session, { role: 'user', text: ev.text.slice(0, 4000), state: 'working', via: 'terminal' })
+    case 'prompt_in': { // message typed in the terminal
+      if (typeof ev.text !== 'string' || !ev.text.trim()) break
+      addChat(session, { role: 'user', text: ev.text.slice(0, 4000), state: 'working', via: 'terminal' })
+      if (ev.text.trim().startsWith('/')) break // a slash command may not start a turn: no turn_complete would end "thinking"
+      // a turn is starting: thinking already, without waiting for turn_start (which may come later, or not at all)
+      const main = mainOf(session)
+      main.busy = true
+      if (main.status === 'idle') { main.status = 'think'; main.detail = '' }
+      main.t = now
       break
+    }
     case 'info': // what the session runs with (the model), shown under the chat
       if (typeof ev.model === 'string') infos.set(session, { ...(infos.get(session) || {}), model: ev.model.slice(0, 80) })
       break

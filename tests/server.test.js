@@ -193,6 +193,18 @@ test('during a turn the main agent is "thinking", not idle, until the turn compl
   await event({ type: 'session_end', session: 'th' })
 })
 
+test('a prompt typed in the terminal makes the agent think at once; a slash command does not', async () => {
+  await event({ type: 'session_start', session: 'pi' })
+  const main = async () => (await snapshot()).agents.find((a) => a.session === 'pi' && a.kind === 'main')
+  await event({ type: 'prompt_in', session: 'pi', text: '/clear' })
+  assert.equal((await main()).status, 'idle')
+  await event({ type: 'prompt_in', session: 'pi', text: 'fix the tests' })
+  assert.equal((await main()).status, 'think')
+  await event({ type: 'turn_complete', session: 'pi', reason: 'answer', answer: 'done' })
+  assert.equal((await main()).status, 'idle')
+  await event({ type: 'session_end', session: 'pi' })
+})
+
 test('permissions: a question that moved to the terminal stays marked until it is answered there or the turn ends', async () => {
   await event({ type: 'session_start', session: 'pk' })
   await event({ type: 'permission', session: 'pk', id: 'q1', tool: 'Bash', summary: 'git push' })

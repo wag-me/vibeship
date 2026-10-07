@@ -1,6 +1,6 @@
 {
   "name": "vibeship",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Vibeship: a 3D spaceship where your Claude Code agents work in crew uniforms. Pick the deck, furnish the stations, chat with the agents and approve permissions. Command: /vibeship",
   "author": { "name": "wag-me" },
   "license": "MIT"

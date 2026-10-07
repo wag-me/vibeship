@@ -97,6 +97,7 @@ tools/make-demo.js                regenerates it (`node tools/make-demo.js`, nee
 tools/launch-trailer.js           plays the launch trailer live, for screen capture (`npm run launch-trailer`)
 tools/record-launch.js            records it frame by frame to 1080p30 + soundtrack (`npm run record-launch`, MP4 with ffmpeg)
 tests/                            mod tests, server tests, live window check
+website/                          the project site (wag-me.github.io/vibeship), built into _site/ by website/build.sh
 ```
 
 ## Development

@@ -29,3 +29,6 @@ docs/vibeship-frames/
 
 # Launch trailer renders (tools/record-launch.js)
 docs/trailer/
+
+# Website build output (website/build.sh)
+/_site/

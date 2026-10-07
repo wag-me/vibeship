@@ -160,6 +160,26 @@ test('permissions: a decision wakes the waiting mod; unknown ids are refused', a
   await event({ type: 'session_end', session: 'x' })
 })
 
+test('permissions: a question that moved to the terminal stays marked until it is answered there or the turn ends', async () => {
+  await event({ type: 'session_start', session: 'pk' })
+  await event({ type: 'permission', session: 'pk', id: 'q1', tool: 'Bash', summary: 'git push' })
+  await event({ type: 'permission_end', session: 'pk', id: 'q1' }) // no answer in the window within 30 s
+  await event({ type: 'parked', session: 'pk', id: 'q1', tool: 'Bash', summary: 'git push' })
+  let s = await snapshot()
+  assert.equal(s.perms.length, 0)
+  assert.deepEqual(s.parked.map((p) => [p.id, p.session, p.tool]), [['q1', 'pk', 'Bash']])
+  await event({ type: 'unparked', session: 'pk', id: 'q1' }) // answered in the terminal
+  assert.equal((await snapshot()).parked.length, 0)
+  // a refusal or Esc in the terminal ends the turn: the marker goes too
+  await event({ type: 'parked', session: 'pk', id: 'q2', tool: 'Write', summary: 'a.txt' })
+  await event({ type: 'turn_complete', session: 'pk', reason: 'aborted' })
+  assert.equal((await snapshot()).parked.length, 0)
+  // and when the session ends
+  await event({ type: 'parked', session: 'pk', id: 'q3', tool: 'Edit', summary: 'b.txt' })
+  await event({ type: 'session_end', session: 'pk' })
+  assert.equal((await snapshot()).parked.length, 0)
+})
+
 test('move: only valid locations are accepted', async () => {
   await event({ type: 'session_start', session: 'm', loc: 'bridge' })
   assert.equal((await api('/api/move', { method: 'POST', body: { session: 'm', loc: 'habitat' } })).status, 204)

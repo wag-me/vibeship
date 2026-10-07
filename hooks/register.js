@@ -204,6 +204,8 @@ async function windowOpen($) {
 
 // Tools the person allowed for the rest of this session from the window (the mod's memory: it resets on reload)
 const sessionAllowed = new Set()
+// Permission questions that fell back to the terminal and are still waiting for an answer there (tool_use_id)
+const parked = new Set()
 
 // Shows the permission request in the window and waits for the answer (up to ~32 s).
 // With no answer, or with the window closed, it decides as before: the question appears in the terminal.
@@ -378,12 +380,20 @@ export function register(on) {
     // answer from the window is refused ("Only the auto-mode classifier can allow ...") and the call fails again and again.
     if (/classifier/i.test(String(r.reason ?? ''))) return r
     if (sessionAllowed.has(String(e.tool))) return { decision: 'allow', reason: 'Allowed for this session from the Vibeship window' }
-    return askWindow($, e, r)
+    const out = await askWindow($, e, r)
+    // the question is now in the terminal: the window keeps a marker on the agent until it is answered there
+    if (out.decision === 'ask') {
+      parked.add(String(e.tool_use_id))
+      send($, { type: 'parked', id: String(e.tool_use_id), tool: String(e.tool), summary: summaryOf(e) })
+    }
+    return out
   })
 
   on('tool.call', async ($, e, next) => {
     send($, { type: 'tool', agentId: e.agentId, status: statusOf(e.tool), detail: detailOf(e) })
     const r = await next(e)
+    // next(e) resolves once the terminal question was answered (and the tool ran, or was refused)
+    if (e.tool_use_id && parked.delete(String(e.tool_use_id))) send($, { type: 'unparked', id: String(e.tool_use_id) })
     if (!r.deny) send($, activityOf(e, r))
     return r
   })

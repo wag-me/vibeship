@@ -76,6 +76,7 @@ const roots = new Map() // session -> working folder (what the Files panel may b
 const acts = new Map() // session -> [finished actions] { id, ts, agent, tool, kind, ok, summary, file?, add?, del?, error? }
 const perms = new Map() // id -> pending permission request
 const permWaiters = new Map() // id -> [{ res, timer }]
+const parked = new Map() // id -> permission question waiting in the terminal { id, session, tool, summary, ts }
 const procs = new Map() // session -> pid of the process hosting it
 const runs = new Map() // session -> recent commands [{ start, end }] (end 0 while running): who was running what, and when
 let ports = {} // session -> servers its agent started [{ port, pid, addr, proc, http, title, url }]
@@ -102,7 +103,7 @@ function snapshot() {
   const files = Object.fromEntries([...roots].map(([k, v]) => [k, path.basename(v) || v]))
   const pub = ({ pid, addr, ...p }) => p // process ids and addresses stay in the server
   const sp = Object.fromEntries(Object.entries(ports).map(([k, v]) => [k, v.map(pub)]))
-  return JSON.stringify({ agents: list, layout, chat: c, perms: [...perms.values()], acts: a, roots: files, info: Object.fromEntries(infos), update, ports: sp, orphans: orphans.map(pub) })
+  return JSON.stringify({ agents: list, layout, chat: c, perms: [...perms.values()], parked: [...parked.values()], acts: a, roots: files, info: Object.fromEntries(infos), update, ports: sp, orphans: orphans.map(pub) })
 }
 // Events often come in bursts (several tool calls, a turn ending): they are sent to the windows as one snapshot.
 let broadcastTimer = null
@@ -213,6 +214,7 @@ function handleEvent(ev) {
       acts.delete(session)
       roots.delete(session)
       for (const [id, p] of perms) if (p.session === session) endPerm(id)
+      unpark(session)
       break
     }
     case 'prompt_in': // message typed in the terminal
@@ -246,6 +248,7 @@ function handleEvent(ev) {
       break
     }
     case 'turn_start': {
+      unpark(session) // a new turn: whatever was asked in the terminal has been answered
       const m = lastUser(session, ['queued', 'sent'])
       if (m) m.state = 'working'
       break
@@ -255,6 +258,12 @@ function handleEvent(ev) {
       break
     case 'permission_end':
       endPerm(String(ev.id))
+      break
+    case 'parked': // the question moved to the terminal and is waiting there
+      if (ev.id) parked.set(String(ev.id), { id: String(ev.id), session, tool: String(ev.tool || ''), summary: String(ev.summary || '').slice(0, 400), ts: now })
+      break
+    case 'unparked':
+      parked.delete(String(ev.id))
       break
     case 'tool': {
       if (ev.status === 'run') { const l = runs.get(session) || []; l.push({ start: now, end: 0 }); runs.set(session, l.slice(-30)) }
@@ -281,6 +290,7 @@ function handleEvent(ev) {
     case 'turn_complete': {
       // subagents still active at the end of the turn stay a few seconds (their end may arrive later) and then disappear
       for (const a of agents.values()) if (a.session === session && a.kind === 'sub' && !a.done) { a.done = true; a.doneAt = now; a.status = 'idle'; a.detail = '' }
+      unpark(session) // the turn ended (a refusal or Esc in the terminal ends it too)
       const m = mainOf(session)
       m.status = 'idle'
       m.detail = ''
@@ -835,6 +845,9 @@ function computeStats(days) {
   }
 }
 
+function unpark(session) {
+  for (const [id, p] of parked) if (p.session === session) parked.delete(id)
+}
 function endPerm(id) {
   perms.delete(id)
   for (const w of permWaiters.get(id) || []) { clearTimeout(w.timer); json(w.res, { decision: null, gone: true }) }

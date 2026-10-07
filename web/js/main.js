@@ -517,8 +517,10 @@ function updateAgents(dt, t, now) {
     } else { ag.moving = false }
 
     const asking = ag.data.kind === 'main' && permsData.some((p) => p.session === ag.data.session && !p.decision)
+    // the question moved to the terminal: it stays marked until it is answered there
+    const parkedHere = !asking && ag.data.kind === 'main' && parkedData.some((p) => p.session === ag.data.session)
     if (!ag.moving) {
-      if (asking) mode = 'alert'
+      if (asking || parkedHere) mode = 'alert'
       else if (now < ag.cheerUntil) mode = 'cheer'
       else if (st !== 'idle') mode = MODE_OF[st] ?? 'typing'
       else mode = now - ag.idleSince > 20000 && ag.wantSit ? 'sleep' : 'look'
@@ -555,10 +557,11 @@ function updateAgents(dt, t, now) {
     if (tagEl._tr !== tr) { tagEl._tr = tr; tagEl.style.transform = tr } // a style write only when it moved
     tagEl.style.display = visible ? '' : 'none'
     tagEl.classList.toggle('sel', selected?.kind === 'agent' && selected.key === ag.key)
+    tagEl.classList.toggle('wait', asking || parkedHere)
     const nm = tagEl._name
     if (nm.textContent !== ag.data.name) nm.textContent = ag.data.name
     const chip = tagEl._chip
-    const showChip = asking || mode !== 'idle' && mode !== 'look' || st !== 'idle'
+    const showChip = asking || parkedHere || mode !== 'idle' && mode !== 'look' || st !== 'idle'
     // bubble with the reply or a short feedback
     const sp = tagEl._speech
     if (ag.say && now < ag.say.until) {
@@ -574,8 +577,8 @@ function updateAgents(dt, t, now) {
     } else sp.hidden = true
     if (showChip) {
       const s = STATUS[mode === 'sleep' ? 'idle' : mode === 'cheer' ? 'idle' : st] ?? STATUS.idle
-      const icon = asking ? '🔔' : mode === 'cheer' ? '🎉' : mode === 'sleep' ? '💤' : s.icon
-      const text = asking ? 'asks for permission' : mode === 'cheer' ? 'done!' : mode === 'sleep' ? 'sleeping' : ag.data.detail || s.text
+      const icon = asking ? '🔔' : parkedHere ? '🖥️' : mode === 'cheer' ? '🎉' : mode === 'sleep' ? '💤' : s.icon
+      const text = asking ? 'asks for permission' : parkedHere ? 'waiting in the terminal' : mode === 'cheer' ? 'done!' : mode === 'sleep' ? 'sleeping' : ag.data.detail || s.text
       chip.hidden = false
       if (tagEl._icon.textContent !== icon) tagEl._icon.textContent = icon
       if (tagEl._text.textContent !== text) tagEl._text.textContent = text
@@ -1449,14 +1452,16 @@ function buildSceneButtons() {
   }
   updateSceneButtons()
 }
-// Updates which location is open and how many agents are in each (with 🔔 if someone is waiting for a permission)
+// Updates which location is open and how many agents are in each (with 🔔 if someone is waiting for a permission,
+// in the window or in the terminal)
 function updateSceneButtons() {
   const mains = agentData.filter((a) => a.kind === 'main')
+  const waiting = [...permsData.filter((p) => !p.decision), ...parkedData]
   for (const b of document.querySelectorAll('#scenes .btn')) {
     const id = b.dataset.scene
     b.setAttribute('aria-pressed', String(id === sceneName))
     const here = mains.filter((a) => (a.loc || 'bridge') === id)
-    const asking = permsData.some((p) => !p.decision && here.some((a) => a.session === p.session))
+    const asking = waiting.some((p) => here.some((a) => a.session === p.session))
     const badge = b.querySelector('.badge')
     badge.hidden = here.length === 0
     badge.textContent = (asking ? '🔔' : '') + here.length
@@ -2115,6 +2120,27 @@ function onPerms(list) {
     if (ag) say(ag, 'May I? 🔔', 5000, true)
   }
   renderPerms()
+  updateWaitingTitle()
+}
+// Questions that moved to the terminal and are still unanswered there
+let parkedData = []
+function onParked(list) {
+  const known = new Set(parkedData.map((p) => p.id))
+  parkedData = list
+  setTimeout(updateSceneButtons, 0)
+  for (const p of list) {
+    if (known.has(p.id)) continue
+    const ag = mainAgentOf(p.session)
+    if (ag) toast('🖥️ ' + ag.data.name + (ag.loc !== sceneName ? ' (' + (LOC_LABEL[ag.loc] ?? '') + ')' : '') + ' is waiting for you in the terminal')
+  }
+  updateWaitingTitle()
+}
+// The window title counts the agents waiting for an answer, so it shows on the taskbar too
+const BASE_TITLE = document.title
+function updateWaitingTitle() {
+  const n = new Set([...permsData.filter((p) => !p.decision), ...parkedData].map((p) => p.session)).size
+  const t = n ? '🔔 ' + n + ' waiting · ' + BASE_TITLE : BASE_TITLE
+  if (document.title !== t) document.title = t
 }
 function buildPerm(p) {
   const el = document.createElement('div')
@@ -2206,6 +2232,7 @@ function connect() {
     onAgents(data.agents ?? [])
     onChat(data.chat)
     onPerms(data.perms ?? [])
+    onParked(data.parked ?? [])
     renderUpdate(data.update)
     infoData = data.info ?? {}
     updateModelChip()

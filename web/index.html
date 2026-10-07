@@ -213,6 +213,8 @@
   #card .st .big { font-size: 22px; }
   #card form { display: flex; gap: 6px; align-items: flex-end; }
   #card textarea { flex: 1; min-width: 0; min-height: 64px; max-height: 40vh; resize: vertical; font: inherit; line-height: 1.4; color: var(--ink); background: #fff; border: 3px solid var(--line); border-radius: 18px; padding: 8px 14px; }
+  #card form.locked textarea { background: #f3f0fa; border-style: dashed; cursor: not-allowed; }
+  #card form.locked button, #cbar.locked .cb { opacity: .45; cursor: not-allowed; }
   #card textarea:focus-visible { border-color: var(--leaf); outline: none; }
   #card .grip-wrap { position: sticky; top: 14px; height: 0; z-index: 2; }
   #card .grip { position: absolute; left: -12px; top: -10px; width: 26px; height: 26px; display: grid; place-items: center; cursor: nwse-resize; touch-action: none; border-radius: 50%; background: #fff; border: 2px solid var(--line); color: var(--muted); font-size: 15px; font-weight: 900; line-height: 1; box-shadow: 0 2px 0 rgba(120,85,40,.18); transition: transform .12s, border-color .12s, color .12s; }

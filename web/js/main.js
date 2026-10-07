@@ -1623,7 +1623,30 @@ function updateCard(focus) {
   portsSig = ''
   renderPorts()
   renderChat(!!focus)
-  if (focus && isMain) $('card-text').focus({ preventScroll: true })
+  lockChat()
+  if (focus && isMain && !$('card-text').disabled) $('card-text').focus({ preventScroll: true })
+}
+// While the agent waits for an answer (a permission or a question, in the window or in the terminal) a message would
+// only queue behind it: the chat is locked until the answer is given, and says where to give it
+const CHAT_PLACEHOLDER = $('card-text').placeholder
+function waitingIn(session) {
+  if (permsData.some((p) => p.session === session && !p.decision)) return 'window'
+  return parkedData.some((p) => p.session === session) ? 'terminal' : null
+}
+function lockChat() {
+  const s = selected?.kind === 'agent' ? agents.get(selected.key)?.data.session : null
+  const where = s ? waitingIn(s) : null
+  const form = $('card-form'), inp = $('card-text')
+  if (form.classList.contains('locked') === !!where && inp.dataset.lock === (where ?? '')) return
+  inp.dataset.lock = where ?? ''
+  form.classList.toggle('locked', !!where)
+  $('cbar').classList.toggle('locked', !!where)
+  inp.disabled = !!where
+  for (const b of [form.querySelector('[type="submit"]'), ...$('cbar').querySelectorAll('button')]) b.disabled = !!where
+  inp.placeholder = where === 'window' ? 'Answer the request above first: then you can write again'
+    : where === 'terminal' ? 'Claude is waiting for your answer in the terminal: answer there, then you can write again'
+    : CHAT_PLACEHOLDER
+  if (where) { $('cmdlist').hidden = true; $('cmenu').hidden = true }
 }
 // ---------- Activity feed + Files panel ----------
 let actsData = {} // session -> finished actions (from the server)
@@ -1801,6 +1824,7 @@ $('card-end').onclick = () => {
 $('card-form').onsubmit = (ev) => {
   ev.preventDefault()
   const inp = $('card-text')
+  if (inp.disabled) return
   let text = inp.value.trim()
   if (!text && !atts.length && !webOn) return
   if (/^\/model\s*$/i.test(text)) { inp.value = ''; showModelPicker(); return } // the terminal selector cannot be shown here: pick in the window instead
@@ -2216,6 +2240,7 @@ function onPerms(list) {
   }
   renderPerms()
   updateWaitingTitle()
+  lockChat()
 }
 // Questions that moved to the terminal and are still unanswered there
 let parkedData = []
@@ -2229,6 +2254,7 @@ function onParked(list) {
     if (ag) toast('🖥️ ' + ag.data.name + (ag.loc !== sceneName ? ' (' + (LOC_LABEL[ag.loc] ?? '') + ')' : '') + ' is waiting for you in the terminal')
   }
   updateWaitingTitle()
+  lockChat()
 }
 // The window title counts the agents waiting for an answer, so it shows on the taskbar too
 const BASE_TITLE = document.title

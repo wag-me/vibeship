@@ -387,9 +387,15 @@ async function main() {
       { question: 'Which style?', header: 'Style', multiSelect: false, options: [{ label: 'Bold', description: 'Loud colors' }, { label: 'Calm', description: 'Soft colors' }] },
       { question: 'Which pages?', header: 'Pages', multiSelect: true, options: [{ label: 'Home', description: '' }, { label: 'Docs', description: '' }, { label: 'Blog', description: '' }] },
     ]
+    await post('/api/event', { type: 'session_start', session: 's1', label: 'quiz' }) // the earlier steps ended it
+    for (let i = 0; i < 40 && !(await ev("window.__ao.agents.has('s1:main')")); i++) await sleep(150)
     await post('/api/event', { type: 'permission', session: 's1', id: 'uq1', tool: 'AskUserQuestion', summary: 'Which style?', questions })
     for (let i = 0; i < 40 && !(await ev("!!document.querySelector('.ask.question')")); i++) await sleep(150)
     assert.equal(await ev("document.querySelectorAll('.ask.question .opt').length"), 5)
+    // the agent's chat is locked while it waits for the answer: a message would only queue behind the question
+    await ev('window.__ao.select({ kind: "agent", key: "s1:main" })')
+    assert.equal(await ev("document.getElementById('card-text').disabled"), true)
+    assert.match(await ev("document.getElementById('card-text').placeholder"), /Answer the request/)
     const wait = fetch(base + '/api/permission/wait?id=uq1&ms=8000', { headers: { 'x-token': token } }).then((r) => r.json())
     const pick = (q, n) => ev(`document.querySelectorAll('.ask.question .q')[${q}].querySelectorAll('.opt')[${n}].click()`)
     const sendBtn = "[...document.querySelectorAll('.ask.question .row button')].find((b) => /Send/.test(b.textContent))"
@@ -400,6 +406,8 @@ async function main() {
     await ev(sendBtn + '.click()')
     assert.deepEqual(await wait, { decision: { answers: { 'Which style?': 'Calm', 'Which pages?': 'Home, Blog' } } })
     await post('/api/event', { type: 'permission_end', session: 's1', id: 'uq1' })
+    for (let i = 0; i < 20 && (await ev("document.getElementById('card-text').disabled")); i++) await sleep(150)
+    assert.equal(await ev("document.getElementById('card-text').disabled"), false) // answered: the chat is open again
   })
   await step('no JavaScript errors were logged', async () => { assert.deepEqual(errors, []) })
 

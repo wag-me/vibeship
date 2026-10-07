@@ -2171,9 +2171,9 @@ function onPerms(list) {
   setTimeout(updateSceneButtons, 0)
   for (const p of list) {
     if (known.has(p.id) || p.decision) continue
-    sfx.error()
+    if (p.questions) sfx.select(); else sfx.error()
     const ag = mainAgentOf(p.session)
-    if (ag) say(ag, 'May I? 🔔', 5000, true)
+    if (ag) say(ag, p.questions ? 'A question for you ❓' : 'May I? 🔔', 5000, true)
   }
   renderPerms()
   updateWaitingTitle()
@@ -2198,7 +2198,99 @@ function updateWaitingTitle() {
   const t = n ? '🔔 ' + n + ' waiting · ' + BASE_TITLE : BASE_TITLE
   if (document.title !== t) document.title = t
 }
+// A multiple-choice question from Claude (AskUserQuestion): pick an option, or write your own answer
+const QUESTION_SECONDS = 120
+function buildQuestion(p) {
+  const el = document.createElement('div')
+  el.className = 'ask question'
+  el.setAttribute('role', 'dialog')
+  const ag = mainAgentOf(p.session)
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e }
+  const h = mk('h3')
+  h.append(mk('span', 'bell', '❓'), mk('span', 'ttl', (ag?.data.name ?? 'Claude') + (ag ? ' (' + (LOC_LABEL[ag.loc] ?? '') + ')' : '') + ' asks you'))
+  el.appendChild(h)
+  const picked = p.questions.map(() => new Set()) // chosen option labels, per question
+  const other = p.questions.map(() => '')
+  const send = mk('button', 'btn ok', '✓ Send answer')
+  const single = p.questions.length === 1 && !p.questions[0].multiSelect
+  const answers = () => {
+    const out = {}
+    p.questions.forEach((q, i) => {
+      const a = other[i].trim() || [...picked[i]].join(', ')
+      if (a) out[q.question] = a
+    })
+    return out
+  }
+  const refresh = () => { send.disabled = Object.keys(answers()).length < p.questions.length }
+  p.questions.forEach((q, i) => {
+    const box = mk('div', 'q')
+    const head = mk('div', 'qh')
+    if (q.header) head.appendChild(mk('span', 'chip', q.header))
+    head.appendChild(mk('b', '', q.question))
+    if (q.multiSelect) head.appendChild(mk('small', '', 'more than one allowed'))
+    box.appendChild(head)
+    const opts = mk('div', 'opts')
+    const inp = mk('input')
+    q.options.forEach((o, n) => {
+      const b = mk('button', 'opt')
+      b.type = 'button'
+      b.setAttribute('aria-pressed', 'false')
+      b.append(mk('span', 'num', String(n + 1)), mk('span', 'lb', o.label))
+      if (o.description) b.appendChild(mk('small', '', o.description))
+      b.onclick = () => {
+        if (q.multiSelect) picked[i].has(o.label) ? picked[i].delete(o.label) : picked[i].add(o.label)
+        else { picked[i].clear(); picked[i].add(o.label) }
+        other[i] = ''; inp.value = ''
+        for (const x of opts.querySelectorAll('.opt')) x.setAttribute('aria-pressed', String(picked[i].has(x.querySelector('.lb').textContent)))
+        sfx.select()
+        refresh()
+        if (single) answerQuestion(p.id, answers()) // one question, one choice: a click is the answer
+      }
+      opts.appendChild(b)
+    })
+    box.appendChild(opts)
+    inp.placeholder = 'Or write your own answer…'
+    inp.maxLength = 2000
+    inp.className = 'other'
+    inp.oninput = () => {
+      other[i] = inp.value
+      if (inp.value.trim()) { picked[i].clear(); for (const x of opts.querySelectorAll('.opt')) x.setAttribute('aria-pressed', 'false') }
+      refresh()
+    }
+    inp.onkeydown = (e) => { if (e.key === 'Enter' && !send.disabled) { e.preventDefault(); send.click() } }
+    box.appendChild(inp)
+    el.appendChild(box)
+  })
+  const row = mk('div', 'row')
+  send.type = 'button'
+  send.onclick = () => answerQuestion(p.id, answers())
+  const term = mk('button', 'btn', '🖥️ Answer in the terminal')
+  term.type = 'button'
+  term.onclick = () => answerQuestion(p.id, null)
+  row.append(send, term)
+  if (single) send.hidden = true
+  el.appendChild(row)
+  el.appendChild(mk('div', 'why', 'With no answer within 2 minutes, the question moves to the terminal.'))
+  const bar = mk('div', 'bar')
+  bar.style.animation = 'shrink ' + QUESTION_SECONDS + 's linear forwards'
+  bar.style.animationDelay = '-' + Math.max(0, (Date.now() - p.ts) / 1000).toFixed(1) + 's'
+  el.appendChild(bar)
+  refresh()
+  return el
+}
+async function answerQuestion(id, answers) {
+  if (!TOKEN) { toast('Open the window with /vibeship to answer'); return }
+  try {
+    const body = answers ? { id, answers } : { id, decision: 'terminal' }
+    const r = await fetch('/api/permission', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify(body) })
+    if (r.status === 401) toast('Window no longer authorized: close it and run /vibeship again')
+    else if (!r.ok) toast('The question is gone (already answered or expired)')
+    else if (answers) sfx.place()
+    else { sfx.click(); toast('🖥️ Answer it in the terminal') }
+  } catch { toast('Server unreachable') }
+}
 function buildPerm(p) {
+  if (p.questions) return buildQuestion(p)
   const el = document.createElement('div')
   el.className = 'ask'
   el.setAttribute('role', 'alertdialog')
@@ -2231,7 +2323,11 @@ function renderPerms() {
       row.textContent = ''
       const r = document.createElement('span')
       r.className = 'res'
-      r.textContent = String(p.decision).startsWith('allow') ? (p.decision === 'allow_session' ? '✓ Allowed for this session' : '✓ Allowed') : '✕ Denied'
+      if (p.questions) {
+        for (const x of el.querySelectorAll('button, input')) x.disabled = true
+        el.querySelector('.why')?.remove()
+      }
+      r.textContent = p.questions ? '✓ Answered: ' + Object.values(p.decision.answers ?? {}).join(' · ') : String(p.decision).startsWith('allow') ? (p.decision === 'allow_session' ? '✓ Allowed for this session' : '✓ Allowed') : '✕ Denied'
       row.appendChild(r)
       el.querySelector('.bar')?.remove()
     }

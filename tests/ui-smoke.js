@@ -364,6 +364,25 @@ async function main() {
     assert.equal(await ev("document.getElementById('orph').hidden"), true)
     assert.equal(await ev("document.getElementById('orph-pop').hidden"), true)
   })
+  await step("Claude's multiple-choice questions show clickable options, and the answers reach the mod", async () => {
+    const questions = [
+      { question: 'Which style?', header: 'Style', multiSelect: false, options: [{ label: 'Bold', description: 'Loud colors' }, { label: 'Calm', description: 'Soft colors' }] },
+      { question: 'Which pages?', header: 'Pages', multiSelect: true, options: [{ label: 'Home', description: '' }, { label: 'Docs', description: '' }, { label: 'Blog', description: '' }] },
+    ]
+    await post('/api/event', { type: 'permission', session: 's1', id: 'uq1', tool: 'AskUserQuestion', summary: 'Which style?', questions })
+    for (let i = 0; i < 40 && !(await ev("!!document.querySelector('.ask.question')")); i++) await sleep(150)
+    assert.equal(await ev("document.querySelectorAll('.ask.question .opt').length"), 5)
+    const wait = fetch(base + '/api/permission/wait?id=uq1&ms=8000', { headers: { 'x-token': token } }).then((r) => r.json())
+    const pick = (q, n) => ev(`document.querySelectorAll('.ask.question .q')[${q}].querySelectorAll('.opt')[${n}].click()`)
+    const sendBtn = "[...document.querySelectorAll('.ask.question .row button')].find((b) => /Send/.test(b.textContent))"
+    await pick(0, 1)
+    assert.equal(await ev(sendBtn + '.disabled'), true) // the second question is still unanswered
+    await pick(1, 0); await pick(1, 2)
+    if (process.env.SMOKE_QUESTION_SHOT) fs.writeFileSync(process.env.SMOKE_QUESTION_SHOT, Buffer.from((await cdp('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
+    await ev(sendBtn + '.click()')
+    assert.deepEqual(await wait, { decision: { answers: { 'Which style?': 'Calm', 'Which pages?': 'Home, Blog' } } })
+    await post('/api/event', { type: 'permission_end', session: 's1', id: 'uq1' })
+  })
   await step('no JavaScript errors were logged', async () => { assert.deepEqual(errors, []) })
 
   const shot = await cdp('Page.captureScreenshot', { format: 'png' })

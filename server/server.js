@@ -254,7 +254,12 @@ function handleEvent(ev) {
       break
     }
     case 'permission':
-      if (ev.id) perms.set(String(ev.id), { id: String(ev.id), session, tool: String(ev.tool || ''), summary: String(ev.summary || '').slice(0, 400), reason: ev.reason ? String(ev.reason).slice(0, 200) : '', ts: now, decision: null })
+      if (ev.id) {
+        const p = { id: String(ev.id), session, tool: String(ev.tool || ''), summary: String(ev.summary || '').slice(0, 400), reason: ev.reason ? String(ev.reason).slice(0, 200) : '', ts: now, decision: null }
+        const qs = cleanQuestions(ev.questions)
+        if (qs) p.questions = qs // a multiple-choice question from Claude (AskUserQuestion), not a permission
+        perms.set(p.id, p)
+      }
       break
     case 'permission_end':
       endPerm(String(ev.id))
@@ -848,6 +853,28 @@ function computeStats(days) {
 function unpark(session) {
   for (const [id, p] of parked) if (p.session === session) parked.delete(id)
 }
+function cleanQuestions(list) {
+  if (!Array.isArray(list) || !list.length) return null
+  const str = (v, n) => String(v ?? '').slice(0, n)
+  const qs = list.slice(0, 4).map((q) => ({
+    question: str(q?.question, 500),
+    header: str(q?.header, 40),
+    multiSelect: !!q?.multiSelect,
+    options: (Array.isArray(q?.options) ? q.options : []).slice(0, 8).map((o) => ({ label: str(o?.label, 120), description: str(o?.description, 400) })),
+  })).filter((q) => q.question)
+  return qs.length ? qs : null
+}
+// The window's answer to a question: question text -> answer, for every question asked
+function cleanAnswers(p, answers) {
+  if (!p.questions || !answers || typeof answers !== 'object') return null
+  const out = {}
+  for (const q of p.questions) {
+    const a = answers[q.question]
+    if (typeof a !== 'string' || !a.trim()) return null
+    out[q.question] = a.trim().slice(0, 2000)
+  }
+  return out
+}
 function endPerm(id) {
   perms.delete(id)
   for (const w of permWaiters.get(id) || []) { clearTimeout(w.timer); json(w.res, { decision: null, gone: true }) }
@@ -866,7 +893,7 @@ function decidePerm(id, decision) {
 setInterval(() => {
   const now = Date.now()
   let changed = false
-  for (const [id, p] of perms) if (now - p.ts > 120000) { endPerm(id); changed = true }
+  for (const [id, p] of perms) if (now - p.ts > (p.questions ? 180000 : 120000)) { endPerm(id); changed = true }
   for (const [k, a] of agents) if (a.done && now - a.doneAt > 9000) { agents.delete(k); changed = true }
   for (const a of agents.values()) {
     if (a.status !== 'idle' && now - a.t > IDLE_AFTER_MS) {
@@ -1043,7 +1070,15 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/permission') {
     if (!authed(req)) { res.writeHead(401); return res.end() }
     return readBody(req, (b) => {
-      const ok = b && typeof b.id === 'string' && ['allow', 'allow_session', 'deny'].includes(b.decision) && decidePerm(b.id, b.decision)
+      const p = b && typeof b.id === 'string' ? perms.get(b.id) : null
+      let decision = null
+      if (p?.questions) {
+        // a question: the answers, or "terminal" to hand it back to the terminal at once
+        if (b.decision === 'terminal') { endPerm(b.id); broadcast(); res.writeHead(204); return res.end() }
+        const answers = cleanAnswers(p, b.answers)
+        if (answers) decision = { answers }
+      } else if (p && ['allow', 'allow_session', 'deny'].includes(b.decision)) decision = b.decision
+      const ok = !!decision && decidePerm(b.id, decision)
       if (ok) broadcast()
       res.writeHead(ok ? 204 : 400)
       res.end()

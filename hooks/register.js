@@ -237,6 +237,40 @@ async function askWindow($, e, base) {
     : { decision: 'deny', reason: 'Denied from the Vibeship window' }
 }
 
+// Claude's multiple-choice questions (AskUserQuestion): shown in the window with clickable options.
+// Resolves to { answers } when answered there, or null to let the terminal ask as usual
+// (window closed, no answer within ~2 minutes, or "answer in the terminal" pressed).
+const QUESTION_WAIT_ROUNDS = 15 // × 8 s
+async function askQuestionWindow($, e) {
+  const questions = Array.isArray(argsOf(e).questions) ? argsOf(e).questions : []
+  if (!questions.length || !(await windowOpen($))) return null
+  const token = await readToken($)
+  if (!token) return null
+  const id = String(e.tool_use_id)
+  await sendNow($, {
+    type: 'permission', id, tool: 'AskUserQuestion', summary: questions.map((q) => q.question).join(' · '),
+    questions: questions.map((q) => ({ question: String(q.question ?? ''), header: String(q.header ?? ''), multiSelect: !!q.multiSelect, options: (q.options ?? []).map((o) => ({ label: String(o.label ?? ''), description: String(o.description ?? '') })) })),
+  })
+  let decision = null
+  for (let i = 0; i < QUESTION_WAIT_ROUNDS && !decision; i++) {
+    try {
+      const r = await $.http.fetch(BASE + '/api/permission/wait?id=' + encodeURIComponent(id) + '&ms=8000', { headers: { 'x-token': token } })
+      if (r.status === 401) { tokenCache = null; break }
+      const j = JSON.parse(r.text)
+      decision = j.decision
+      if (j.gone) break
+    } catch {
+      break
+    }
+    if (!decision && !(await windowOpen($))) break // the window was closed: ask in the terminal
+  }
+  if (!decision || typeof decision !== 'object' || !decision.answers) {
+    send($, { type: 'permission_end', id })
+    return null
+  }
+  return { answers: decision.answers }
+}
+
 // One finished action for the window's activity feed: what was touched and whether it worked.
 const lineCount = (t) => (typeof t === 'string' && t.length ? t.split('\n').length : 0)
 function activityOf(e, r) {
@@ -376,6 +410,8 @@ export function register(on) {
   on('tool.check', async ($, e, next) => {
     const r = await next(e)
     if (r.decision !== 'ask' || !e.tool_use_id) return r
+    // its dialog is answered by the question hook below, not by an allow/deny (an allow would not dismiss it)
+    if (e.tool === 'AskUserQuestion') return r
     // Some calls can only be decided by the auto-mode classifier (e.g. a subagent handing back its report): an
     // answer from the window is refused ("Only the auto-mode classifier can allow ...") and the call fails again and again.
     if (/classifier/i.test(String(r.reason ?? ''))) return r
@@ -396,6 +432,21 @@ export function register(on) {
     if (e.tool_use_id && parked.delete(String(e.tool_use_id))) send($, { type: 'unparked', id: String(e.tool_use_id) })
     if (!r.deny) send($, activityOf(e, r))
     return r
+  })
+
+  // Claude's multiple-choice questions: answered from the window when it is open, otherwise in the terminal
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
+    if (!e.tool_use_id) return next(e)
+    const got = await askQuestionWindow($, e)
+    if (got) return { result: { questions: argsOf(e).questions, answers: got.answers } }
+    const id = String(e.tool_use_id)
+    parked.add(id)
+    send($, { type: 'parked', id, tool: 'AskUserQuestion', summary: (argsOf(e).questions ?? []).map((q) => q.question).join(' · ').slice(0, 300) })
+    try {
+      return await next(e)
+    } finally {
+      if (parked.delete(id)) send($, { type: 'unparked', id })
+    }
   })
 
   on('agent.spawn', async ($, e, next) => {

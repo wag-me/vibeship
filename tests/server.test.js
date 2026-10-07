@@ -160,6 +160,26 @@ test('permissions: a decision wakes the waiting mod; unknown ids are refused', a
   await event({ type: 'session_end', session: 'x' })
 })
 
+test("Claude's questions: the window's answers reach the mod; incomplete ones are refused; 'terminal' hands it back", async () => {
+  await event({ type: 'session_start', session: 'qa' })
+  const questions = [{ question: 'Which style?', header: 'Style', multiSelect: false, options: [{ label: 'Bold', description: 'x' }, { label: 'Calm', description: '' }] }]
+  await event({ type: 'permission', session: 'qa', id: 'a1', tool: 'AskUserQuestion', summary: 'Which style?', questions })
+  assert.deepEqual((await snapshot()).perms[0].questions[0].options.map((o) => o.label), ['Bold', 'Calm'])
+  const waiting = api('/api/permission/wait?id=a1&ms=5000').then((r) => r.json())
+  await new Promise((r) => setTimeout(r, 150))
+  assert.equal((await api('/api/permission', { method: 'POST', body: { id: 'a1', decision: 'allow' } })).status, 400) // a question needs answers
+  assert.equal((await api('/api/permission', { method: 'POST', body: { id: 'a1', answers: {} } })).status, 400)
+  assert.equal((await api('/api/permission', { method: 'POST', body: { id: 'a1', answers: { 'Which style?': 'My own idea' } } })).status, 204)
+  assert.deepEqual(await waiting, { decision: { answers: { 'Which style?': 'My own idea' } } })
+  // "answer in the terminal": the waiting mod is told the question is gone
+  await event({ type: 'permission', session: 'qa', id: 'a2', tool: 'AskUserQuestion', summary: 'Which style?', questions })
+  const waiting2 = api('/api/permission/wait?id=a2&ms=5000').then((r) => r.json())
+  await new Promise((r) => setTimeout(r, 150))
+  assert.equal((await api('/api/permission', { method: 'POST', body: { id: 'a2', decision: 'terminal' } })).status, 204)
+  assert.deepEqual(await waiting2, { decision: null, gone: true })
+  await event({ type: 'session_end', session: 'qa' })
+})
+
 test('permissions: a question that moved to the terminal stays marked until it is answered there or the turn ends', async () => {
   await event({ type: 'session_start', session: 'pk' })
   await event({ type: 'permission', session: 'pk', id: 'q1', tool: 'Bash', summary: 'git push' })

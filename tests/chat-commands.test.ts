@@ -133,6 +133,34 @@ test('calls that only the auto-mode classifier can allow are left to the engine,
   expect(posted.some((p: any) => p.type === 'permission')).toBe(false)
 })
 
+const QUESTIONS = [{ question: 'Which style?', header: 'Style', multiSelect: false, options: [{ label: 'Bold', description: 'x' }, { label: 'Calm', description: 'y' }] }]
+
+test("Claude's multiple-choice question is answered from the window, without the terminal dialog", async ($, on) => {
+  let engineAsked = 0
+  on('tool.call', () => { engineAsked++; return { result: {}, text: 'from the terminal' } }) // the engine beneath the plugin
+  const posted = await boot($, on, [])
+  posted.decision = { answers: { 'Which style?': 'Calm' } }
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', tool_use_id: 'q1', questions: QUESTIONS } as any)
+  expect(r.result.answers).toEqual({ 'Which style?': 'Calm' })
+  expect(engineAsked).toBe(0)
+  const sent = posted.find((p: any) => p.type === 'permission')
+  expect(sent).toMatchObject({ id: 'q1', tool: 'AskUserQuestion' })
+  expect(sent.questions[0].options.map((o: any) => o.label)).toEqual(['Bold', 'Calm'])
+})
+
+test('with no answer in the window, the question goes back to the terminal and stays marked until answered there', async ($, on) => {
+  let engineAsked = 0
+  on('tool.call', () => { engineAsked++; return { result: { questions: QUESTIONS, answers: { 'Which style?': 'Bold' } }, text: 'ok' } })
+  const posted = await boot($, on, [])
+  posted.decision = null
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', tool_use_id: 'q2', questions: QUESTIONS } as any)
+  expect(engineAsked).toBe(1)
+  expect(r.result.answers).toEqual({ 'Which style?': 'Bold' })
+  const types = posted.map((p: any) => p.type)
+  expect(types).toContain('permission_end')
+  expect(types.indexOf('parked')).toBeLessThan(types.indexOf('unparked'))
+})
+
 test('the window can switch the model; the mod reports what the session runs with', async ($, on) => {
   let model = 'claude-sonnet-5-5'
   const sets: any[] = []

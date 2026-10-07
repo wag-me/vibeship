@@ -464,10 +464,17 @@ function pickTask(ag) {
   }
   return null
 }
+// The status to show: a main agent whose message is still "working on it" in the chat is thinking, even when the server
+// already dropped it to idle (a very long turn, a missed turn_start, a restart mid-turn)
+function statusOf(ag) {
+  const st = ag.data.status
+  if (st !== 'idle' || ag.data.kind !== 'main') return st
+  return chatData[ag.data.session]?.some((m) => m.role === 'user' && m.state === 'working') ? 'think' : st
+}
 // Where this agent should be going because of its free time, or null when it has real business (work, leaving, being moved)
 function lifeTargetFor(ag, tg, now) {
   const sub = ag.data.kind === 'sub'
-  const free = !ag.leaving && !ag.dragging && !ag.hold && !ag.pin && !ag.mat && (sub ? !ag.data.done : ag.data.status === 'idle' && !!tg?.lobby)
+  const free = !ag.leaving && !ag.dragging && !ag.hold && !ag.pin && !ag.mat && (sub ? !ag.data.done : statusOf(ag) === 'idle' && !!tg?.lobby)
   if (!free) { endTask(ag); return null }
   if (ag.task?.furnId && !furn.has(ag.task.furnId)) endTask(ag)
   if (!ag.task) {
@@ -496,7 +503,8 @@ function updateAgents(dt, t, now) {
     if (lifeTarget) tg = lifeTarget
     const r = ag.char.root
     if (ag.leaving && Math.hypot(DOOR.x - r.position.x, DOOR.z - r.position.z) < 0.5) { finishLeave(ag); continue }
-    const st = ag.data.status
+    const st = statusOf(ag)
+    if (st !== 'idle') ag.idleSince = Math.max(ag.idleSince, now) // the nap countdown starts when the work really ends
     let mode = 'idle'
     if (!ag.dragging && tg) {
       const dx = tg.x - r.position.x, dz = tg.z - r.position.z
@@ -762,7 +770,7 @@ function describe(o) {
   if (o.kind === 'furn') return furn.get(o.id)?.def.label ?? ''
   const ag = agents.get(o.key)
   if (!ag) return ''
-  const s = STATUS[ag.data.status] ?? STATUS.idle
+  const s = STATUS[statusOf(ag)] ?? STATUS.idle
   return `${ag.data.name}${ag.data.kind === 'sub' ? ' (subagent)' : ''} · ${SPECIES[ag.species]?.label ?? ''} · ${s.text}`
 }
 
@@ -1583,7 +1591,7 @@ function updateCard(focus) {
   const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
   if (!ag) { closeCard(); return }
   const a = ag.data
-  const st = STATUS[a.status] ?? STATUS.idle
+  const st = STATUS[statusOf(ag)] ?? STATUS.idle
   if (!renaming) $('card-name').textContent = a.name
   $('card-rename').style.display = a.kind === 'main' ? '' : 'none'
   $('card-sp').textContent = (SPECIES[ag.species]?.label ?? '') + ' · ' + (ag.char.outfit?.name ?? '') + (a.kind === 'main' ? ' · main assistant' : ' · subagent')

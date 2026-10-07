@@ -1073,7 +1073,7 @@ function toggleCatalog(open) {
   const willOpen = open ?? c.hidden
   c.hidden = !willOpen
   $('add-btn').setAttribute('aria-expanded', String(willOpen))
-  if (willOpen) { if (!$('spawn').hidden) toggleSpawn(false); buildCatalog(); renderPreviews(); sfx.click() }
+  if (willOpen) { if (!$('spawn').hidden) toggleSpawn(false); closeAgentCard(); buildCatalog(); renderPreviews(); sfx.click() }
 }
 $('add-btn').onclick = () => toggleCatalog()
 $('cat-close').onclick = () => toggleCatalog(false)
@@ -1301,7 +1301,7 @@ function toggleStats(open) {
   const willOpen = open ?? el.hidden
   el.hidden = !willOpen
   $('stats-btn').setAttribute('aria-expanded', String(willOpen))
-  if (willOpen) { toggleCatalog(false); toggleSpawn(false); toggleFiles(false); sfx.click(); loadStats() }
+  if (willOpen) { toggleCatalog(false); toggleSpawn(false); toggleFiles(false); closeAgentCard(); sfx.click(); loadStats() }
 }
 $('stats-btn').onclick = () => toggleStats()
 // any other button in the top bar closes the statistics panel
@@ -1329,6 +1329,7 @@ function toggleSpawn(open) {
   if (willOpen) {
     toggleCatalog(false)
     toggleStats(false)
+    closeAgentCard()
     sfx.click()
     buildLookUI()
     spawnLoc = sceneName
@@ -1575,6 +1576,8 @@ function openCard(key) {
   if (a?.data.kind === 'main') loadCmds(a.data.session)
 }
 function closeCard() { $('card').hidden = true }
+// another panel is opening: deselect the agent so its card doesn't stay open underneath
+function closeAgentCard() { if (selected?.kind === 'agent') select(null) }
 function updateCard(focus) {
   const ag = selected?.kind === 'agent' ? agents.get(selected.key) : null
   if (!ag) { closeCard(); return }
@@ -2033,6 +2036,57 @@ $('card-text').addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { cmdSel = (cmdSel + (e.key === 'ArrowDown' ? 1 : -1) + box._hits.length) % box._hits.length; renderCmds(); e.preventDefault() }
   else if (e.key === 'Tab' || (e.key === 'Enter' && !box._hits.some((c) => c.name === typed))) { pickCmd(box._hits[cmdSel].name); e.preventDefault() }
   else if (e.key === 'Escape') { box.hidden = true; e.stopPropagation() }
+})
+// Enter sends, Shift+Enter starts a new line (registered after the suggestions handler, which may consume Enter)
+$('card-text').addEventListener('keydown', (e) => {
+  if (!e.repeat && !e.ctrlKey && !e.metaKey) {
+    if (e.key === ' ' || e.key === 'Enter') sfx.keyBig()
+    else if (e.key === 'Backspace' || e.key === 'Delete') sfx.keyBack()
+    else if (e.key.length === 1) sfx.key()
+  }
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.defaultPrevented) return
+  e.preventDefault()
+  $('card-form').requestSubmit()
+})
+$('card-text').addEventListener('keyup', (e) => {
+  if (e.ctrlKey || e.metaKey) return
+  if (e.key === ' ' || e.key === 'Enter') sfx.keyUp(true)
+  else if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') sfx.keyUp(false)
+})
+
+// ---- Resizable agent card: drag the corner grip (anchored bottom-right, so it grows up and left) ----
+const CARD_SIZE_KEY = 'ao-card-size'
+function applyCardSize(s) {
+  const card = $('card')
+  if (s?.w) card.style.setProperty('--card-w', s.w + 'px'); else card.style.removeProperty('--card-w')
+  if (s?.h) card.style.setProperty('--chat-h', s.h + 'px'); else card.style.removeProperty('--chat-h')
+}
+try { applyCardSize(JSON.parse(localStorage.getItem(CARD_SIZE_KEY) || 'null')) } catch {}
+$('card-grip').addEventListener('pointerdown', (e) => {
+  e.preventDefault()
+  const grip = e.currentTarget
+  grip.setPointerCapture(e.pointerId)
+  const x0 = e.clientX, y0 = e.clientY
+  const w0 = $('card').getBoundingClientRect().width
+  const h0 = $('chat').getBoundingClientRect().height
+  let size = null
+  const move = (ev) => {
+    size = { w: Math.round(clamp(w0 - (ev.clientX - x0), 340, innerWidth - 28)), h: Math.round(clamp(h0 - (ev.clientY - y0), 120, innerHeight - 260)) }
+    applyCardSize(size)
+  }
+  const up = () => {
+    grip.removeEventListener('pointermove', move)
+    grip.removeEventListener('pointerup', up)
+    grip.removeEventListener('pointercancel', up)
+    if (size) try { localStorage.setItem(CARD_SIZE_KEY, JSON.stringify(size)) } catch {}
+  }
+  grip.addEventListener('pointermove', move)
+  grip.addEventListener('pointerup', up)
+  grip.addEventListener('pointercancel', up)
+})
+$('card-grip').addEventListener('dblclick', () => {
+  applyCardSize(null)
+  try { localStorage.removeItem(CARD_SIZE_KEY) } catch {}
 })
 
 // ---------- Conversation, replies and permissions ----------

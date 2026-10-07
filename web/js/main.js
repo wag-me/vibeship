@@ -2059,7 +2059,9 @@ const CARD_SIZE_KEY = 'ao-card-size'
 function applyCardSize(s) {
   const card = $('card')
   if (s?.w) card.style.setProperty('--card-w', s.w + 'px'); else card.style.removeProperty('--card-w')
-  if (s?.h) card.style.setProperty('--chat-h', s.h + 'px'); else card.style.removeProperty('--chat-h')
+  // a real height, not just a cap: otherwise a short conversation would not let the card grow
+  $('chat').style.height = s?.h ? s.h + 'px' : ''
+  $('chat').style.maxHeight = s?.h ? 'none' : ''
 }
 try { applyCardSize(JSON.parse(localStorage.getItem(CARD_SIZE_KEY) || 'null')) } catch {}
 $('card-grip').addEventListener('pointerdown', (e) => {

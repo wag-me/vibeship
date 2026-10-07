@@ -200,7 +200,8 @@
   #card { position: absolute; z-index: 6; right: 14px; bottom: 62px; width: min(var(--card-w, 520px), calc(100vw - 28px)); max-height: calc(100vh - 150px); overflow-y: auto; background: var(--cream); border: 4px solid #fff; border-radius: 26px; padding: 14px 16px 12px; box-shadow: 0 8px 0 rgba(120,85,40,.25); animation: pop .22s cubic-bezier(.3,1.6,.5,1); }
   #card[hidden] { display: none; }
   @keyframes pop { from { transform: scale(.85) translateY(12px); opacity: 0; } }
-  #card h2 { margin: 0; font-size: 17px; padding-right: 30px; }
+  #card h2 { margin: 0; font-size: 17px; padding-right: 30px; padding-left: 18px; }
+  #card .sp { padding-left: 18px; }
   #card .sp { color: var(--muted); font-size: 12.5px; font-weight: 700; }
   #card .st { margin: 8px 0 10px; display: flex; gap: 8px; align-items: center; background: #fff; border-radius: 16px; padding: 7px 12px; border: 2px solid var(--line); }
   #card .st .big { font-size: 22px; }
@@ -208,8 +209,9 @@
   #card textarea { flex: 1; min-width: 0; min-height: 64px; max-height: 40vh; resize: vertical; font: inherit; line-height: 1.4; color: var(--ink); background: #fff; border: 3px solid var(--line); border-radius: 18px; padding: 8px 14px; }
   #card textarea:focus-visible { border-color: var(--leaf); outline: none; }
   #card .grip-wrap { position: sticky; top: 14px; height: 0; z-index: 2; }
-  #card .grip { position: absolute; left: -14px; top: -12px; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none; border-radius: 8px; background: linear-gradient(135deg, var(--line) 0 2px, transparent 2px 6px, var(--line) 6px 8px, transparent 8px 12px, var(--line) 12px 14px, transparent 14px); opacity: .7; }
-  #card .grip:hover { opacity: 1; }
+  #card .grip { position: absolute; left: -12px; top: -10px; width: 26px; height: 26px; display: grid; place-items: center; cursor: nwse-resize; touch-action: none; border-radius: 50%; background: #fff; border: 2px solid var(--line); color: var(--muted); font-size: 15px; font-weight: 900; line-height: 1; box-shadow: 0 2px 0 rgba(120,85,40,.18); transition: transform .12s, border-color .12s, color .12s; }
+  #card .grip::before { content: '⤡'; }
+  #card .grip:hover { transform: scale(1.12); border-color: var(--leaf); color: var(--leaf); }
   #card .row { display: flex; gap: 8px; margin-top: 10px; }
   #card .note { color: var(--muted); font-size: 12px; margin-top: 8px; font-weight: 700; }
   #card .x { position: absolute; right: 10px; top: 10px; }
@@ -231,7 +233,7 @@
   @media (max-width: 720px) { #askbar { white-space: normal; border-radius: 22px; width: calc(100vw - 28px); flex-wrap: wrap; } }
 
   /* ---- Conversation in the card ---- */
-  .chat { display: flex; flex-direction: column; gap: 6px; max-height: var(--chat-h, clamp(210px, 42vh, 420px)); overflow: auto; margin: 0 0 10px; padding: 2px 2px 2px 0; scroll-behavior: smooth; }
+  .chat { display: flex; flex-direction: column; gap: 6px; max-height: clamp(210px, 42vh, 420px); overflow: auto; margin: 0 0 10px; padding: 2px 2px 2px 0; scroll-behavior: smooth; }
   .chat:empty::before { content: 'No messages yet: write something to Claude!'; color: var(--muted); font-size: 12.5px; padding: 6px 4px; }
   .msg { max-width: 92%; padding: 7px 12px; border-radius: 18px; border: 3px solid #fff; box-shadow: 0 2px 0 rgba(120,85,40,.16); font-weight: 700; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .msg.user { align-self: flex-end; background: var(--leaf); color: #fff; border-bottom-right-radius: 6px; }

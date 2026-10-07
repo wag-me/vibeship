@@ -10,7 +10,10 @@ OUT=_site
 rm -rf "$OUT"
 mkdir -p "$OUT/assets"
 
-cp web/icons/icon.svg web/icons/apple-touch-icon.png web/favicon.svg docs/demo.gif docs/demo.mp4 "$OUT/assets/"
+cp web/icons/icon.svg web/icons/apple-touch-icon.png web/favicon.svg "$OUT/assets/"
+# The demo media live on the `media` branch (the plugin directory refuses files over 5 MiB in the plugin)
+git fetch -q --depth 1 origin media
+for f in demo.gif demo.mp4; do git show "FETCH_HEAD:$f" > "$OUT/assets/$f"; done
 
 # Version shown in the header, from the plugin manifest
 VERSION=$(python3 -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")

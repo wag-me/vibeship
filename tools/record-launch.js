@@ -15,6 +15,7 @@
 //        --from 17 --to 27 --fps 8 --width 560           the cut, its frame rate and width (these are --gif's defaults;
 //                                                        --web's are the whole film at 30 fps, 1280 wide). Both need ffmpeg
 //        --frames --dir <folder>                         also keep the JPEG frames, to try other encodings with ffmpeg
+//   Both stay out of git on main: commit them to the `media` branch, then rerun the Website workflow
 const { spawn, spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')

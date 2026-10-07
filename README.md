@@ -6,7 +6,7 @@ A **3D spaceship** where your [Claude Code](https://claude.com/claude-code) agen
 It is a Claude Code *mod* (plugin): every session becomes a little animal that walks, sits at the console, thinks, sleeps and cheers while it really works.
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Vibeship in action: an agent asks permission to push and gets it from the window, the crew works across the ship, and the reply lands in the agent's chat" width="720">
+  <img src="https://raw.githubusercontent.com/wag-me/vibeship/media/demo.gif" alt="Vibeship in action: an agent asks permission to push and gets it from the window, the crew works across the ship, and the reply lands in the agent's chat" width="720">
 </p>
 
 ## What it does
@@ -92,10 +92,10 @@ web/                              the 3D window (Three.js, no build step)
   js/                             scene, characters, furniture, effects, audio
   js/trailer/                     the 30-second launch trailer, played by the window itself (/?trailer)
   vendor/three/                   Three.js (MIT)
-docs/demo.gif, docs/demo.mp4      the animation above and the website's film, both cut from the launch trailer
 tools/launch-trailer.js           plays the launch trailer live, for screen capture (`npm run launch-trailer`)
 tools/record-launch.js            records it frame by frame to 1080p30 + soundtrack (`npm run record-launch`, MP4 with ffmpeg);
-                                  `--gif` and `--web` rebuild docs/demo.gif and docs/demo.mp4
+                                  `--gif` and `--web` cut the animation above and the website's film (docs/demo.gif,
+                                  docs/demo.mp4), published on the `media` branch, not in the plugin
 tests/                            mod tests, server tests, live window check
 website/                          the project site (wag-me.github.io/vibeship), built into _site/ by website/build.sh
 ```

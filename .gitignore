@@ -26,7 +26,8 @@ docs/vibeship-frames/
 # Personal tools and generated videos: kept next to the project, never committed
 /local/
 *.mp4
-!docs/demo.mp4
+# The demo media live on the `media` branch: the plugin directory refuses files over 5 MiB in the plugin
+docs/demo.gif
 
 # Launch trailer renders (tools/record-launch.js)
 docs/trailer/

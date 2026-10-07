@@ -84,15 +84,8 @@
     .rec { color: var(--warn); margin-right: 10px; }
     .rec::before { content: "●"; margin-right: 6px; animation: blink 1.2s steps(2) infinite; }
     @keyframes blink { 50% { opacity: 0; } }
-    .toggle { display: flex; gap: 0; }
-    .toggle button { font: inherit; font-size: 12px; background: none; border: 1px solid var(--rule-hi); color: var(--dim);
-      padding: 2px 10px; cursor: pointer; }
-    .toggle button + button { border-left: 0; }
-    .toggle button[aria-pressed="true"] { background: var(--pink); color: var(--bg); border-color: var(--pink); }
     .view { position: relative; aspect-ratio: 16 / 9; }
-    .view canvas, .view img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-    .view img { object-fit: cover; }
-    .view [hidden] { display: none; }
+    .view video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
 
     /* hero text */
     .intro { display: grid; grid-template-columns: 1.3fr 1fr; gap: 40px; padding: 40px 0 8px; align-items: end; }
@@ -185,14 +178,9 @@
     <figure class="screen" style="margin-left:0;margin-right:0">
       <div class="screen-bar">
         <span><span class="rec">live</span>bridge.cam · deck 01<span class="jp">ブリッジ</span></span>
-        <div class="toggle" role="group" aria-label="Render mode">
-          <button type="button" data-mode="video" aria-pressed="true">video</button>
-          <button type="button" data-mode="ascii" aria-pressed="false">ascii</button>
-        </div>
       </div>
       <div class="view">
-        <canvas id="ascii" aria-label="ASCII rendering of Vibeship: an agent at its console, a subagent arriving by drone" hidden></canvas>
-        <img id="gif" src="assets/demo.gif" alt="Vibeship in action: an agent works at its console, a subagent flies in and roams the room, a chat message gets its reply">
+        <video id="demo" src="assets/demo.mp4" autoplay muted loop playsinline aria-label="Vibeship in action: four agents board the ship and get to work, subagents fly in by drone, one asks permission to push and gets it from the window, and its reply lands in the chat"></video>
       </div>
     </figure>
 
@@ -311,58 +299,10 @@
     setTimeout(() => { b.textContent = 'copy'; b.classList.remove('ok'); }, 1500);
   }));
 
-  // ascii renderer: frames are strings of brightness levels 0-9, one char per cell
-  (async () => {
-    const canvas = document.getElementById('ascii');
-    const gif = document.getElementById('gif');
-    const ctx = canvas.getContext('2d');
-    const RAMP = ' .:-=+*%#@';
-    const ICE = ['#05080b', '#0f2a36', '#15435a', '#1d6283', '#2b84ab', '#3aa7c9', '#5cc6e3', '#86dcf2', '#b8eefb', '#eafbff'];
-    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let data, frame = 0, timer = null, cw, ch;
-
-    function size() {
-      const r = canvas.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
-      canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
-      if (data) { cw = canvas.width / data.cols; ch = canvas.height / data.rows; draw(); }
-    }
-    function draw() {
-      const f = data.frames[frame], cols = data.cols;
-      ctx.fillStyle = ICE[0]; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.font = `${Math.ceil(ch * 0.95)}px "IBM Plex Mono", monospace`;
-      ctx.textBaseline = 'top'; ctx.textAlign = 'center';
-      for (let i = 0; i < f.length; i++) {
-        const v = f.charCodeAt(i) - 48;
-        if (v < 1) continue;
-        ctx.fillStyle = ICE[v];
-        ctx.fillText(RAMP[v], (i % cols + .5) * cw, ((i / cols) | 0) * ch);
-      }
-    }
-    function play() {
-      stop();
-      if (still) return;
-      timer = setInterval(() => { frame = (frame + 1) % data.frames.length; draw(); }, data.ms);
-    }
-    function stop() { clearInterval(timer); timer = null; }
-
-    // video is the default view; ascii frames are fetched on first use
-    async function load() {
-      if (data) return true;
-      try { data = await (await fetch('assets/demo-ascii.json')).json(); }
-      catch { return false; }   // e.g. opened from file://
-      if (document.fonts) await document.fonts.ready;
-      return true;
-    }
-    addEventListener('resize', () => !canvas.hidden && size());
-    document.addEventListener('visibilitychange', () => document.hidden ? stop() : (!canvas.hidden && play()));
-
-    document.querySelectorAll('.toggle button').forEach(btn => btn.addEventListener('click', async () => {
-      const ascii = btn.dataset.mode === 'ascii';
-      if (ascii && !(await load())) return;
-      document.querySelectorAll('.toggle button').forEach(b => b.setAttribute('aria-pressed', b === btn));
-      canvas.hidden = !ascii; gif.hidden = ascii;
-      ascii ? (size(), play()) : stop();
-    }));
+  // the demo film: with reduced motion it stays on its first frame, with controls to play it
+  (() => {
+    const v = document.getElementById('demo');
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { v.removeAttribute('autoplay'); v.pause(); v.controls = true; }
   })();
 
   // background sky: ascii shapes, kaomoji and katakana drifting slowly upward

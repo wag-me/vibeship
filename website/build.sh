@@ -10,8 +10,7 @@ OUT=_site
 rm -rf "$OUT"
 mkdir -p "$OUT/assets"
 
-cp web/icons/icon.svg web/icons/apple-touch-icon.png web/favicon.svg docs/demo.gif "$OUT/assets/"
-python3 website/ascii-frames.py docs/demo.gif "$OUT/assets/demo-ascii.json"
+cp web/icons/icon.svg web/icons/apple-touch-icon.png web/favicon.svg docs/demo.gif docs/demo.mp4 "$OUT/assets/"
 
 # Version shown in the header, from the plugin manifest
 VERSION=$(python3 -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")

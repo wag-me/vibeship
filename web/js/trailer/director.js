@@ -8,6 +8,7 @@
 //   /?trailer&autoplay   starts by itself (sound needs a browser started with --autoplay-policy=no-user-gesture-required)
 //   /?trailer&record     no clock of its own: tools/record-launch.js steps it frame by frame (window.__trailer)
 //   &mute                no soundtrack
+//   &steady              no handheld shake (for the GIF: a still frame stays still, and costs nothing)
 import { T, FPS, FRAMES, DURATION, MESSAGE, MESSAGE_RHYTHM, REPLY } from './story.js'
 import { ease, track, cueList, seeded, span } from './timeline.js'
 import { createRig, follower, handheld } from './camera.js'
@@ -30,7 +31,7 @@ const keyOf = (c) => CREW[c].session + ':main'
 export function startTrailer(host) {
   const { THREE } = host
   const qs = new URLSearchParams(location.search)
-  const RECORD = qs.has('record'), AUTOPLAY = qs.has('autoplay'), MUTE = qs.has('mute') || RECORD
+  const RECORD = qs.has('record'), AUTOPLAY = qs.has('autoplay'), MUTE = qs.has('mute') || RECORD, STEADY = qs.has('steady')
   document.body.classList.add('trailer')
   loadCss()
 
@@ -243,7 +244,7 @@ export function startTrailer(host) {
     // camera
     followFox.update(dt, foxPos())
     const pose = rig.pose(t)
-    const hh = handheld(t, shake(t))
+    const hh = handheld(t, STEADY ? 0 : shake(t))
     host.cam.az = host.goal.az = pose.az + hh.az
     host.cam.el = host.goal.el = pose.el
     host.cam.zoom = host.goal.zoom = pose.zoom

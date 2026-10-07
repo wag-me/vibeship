@@ -52,7 +52,7 @@ When a new version is out, Vibeship tells you: a notice in the window and a mess
 claude plugin marketplace update vibeship
 claude plugin update vibeship@vibeship
 ```
-then restart Claude Code. The check downloads the public `plugin.json` from GitHub every few hours and sends nothing; set `VIBESHIP_NO_UPDATE_CHECK=1` to turn it off.
+then restart Claude Code. The check downloads the public `plugin.json` from GitHub every 6 hours and sends nothing; set `VIBESHIP_NO_UPDATE_CHECK=1` to turn it off.
 
 Prefer not to install? Load it for one session from a clone of this repo:
 ```bash
@@ -69,18 +69,38 @@ Sessions started after the window is open appear in it by themselves; for one th
 ## Environment variables
 | Variable | Effect |
 | :- | :- |
-| `AGENT_OFFICE_PORT` | local server port (default 47890) |
-| `AGENT_OFFICE_DIR` | data folder (token, layout, recent folders, uploads); default `~/.claude-vibeship` |
-| `AGENT_OFFICE_NAME` | resident's name (default: folder name) |
-| `AGENT_OFFICE_LOOK` | look, `species:uniform` (e.g. `fox:3`) |
-| `AGENT_OFFICE_LOC` | location: `bridge`, `engine` or `habitat` |
+| `VIBESHIP_PORT` | local server port (default 47890) |
+| `VIBESHIP_DIR` | data folder (token, layout, recent folders, uploads); default `~/.claude-vibeship` |
+| `VIBESHIP_NAME` | resident's name (default: folder name) |
+| `VIBESHIP_LOOK` | look, `species:uniform` (e.g. `fox:3`) |
+| `VIBESHIP_LOC` | location: `bridge`, `engine` or `habitat` |
 | `VIBESHIP_NO_UPDATE_CHECK` | set to `1` to stop checking GitHub for new versions |
 
-## Security
-- The server listens **only on `127.0.0.1`**.
-- Chat, slash commands, stop, close, permissions, moves, new agents, statistics and folder creation require a random **token**, saved in a file in your user folder and passed only to the window opened by `/vibeship`.
-- The mod is **not sandboxed**: it has the same access as Claude Code. The *Agent* button can open a terminal with Claude Code in a folder you choose, and the chat can run any slash command of the session. Only install mods from sources you trust.
-- Statistics are read locally from `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`); nothing leaves your machine.
+## Privacy and security: what Vibeship runs, reads and sends
+Vibeship has no telemetry, no analytics and no account. Everything stays on your machine, except the update check below.
+
+**Network**
+- A local server (`node server/server.js`, started by `/vibeship`) listens **only on `127.0.0.1`** (port 47890 by default). The window is served by it and loads nothing from the internet.
+- The only request that leaves your machine is the **update check**: when it starts and every 6 hours, the server downloads the public `https://raw.githubusercontent.com/wag-me/vibeship/main/.claude-plugin/plugin.json` to compare versions. It sends no data of yours. Set `VIBESHIP_NO_UPDATE_CHECK=1` to turn it off.
+- For the **🔌 Servers** list, the server requests the home page of ports that your agents' processes open on this machine, to read the page title. Only while the window is open.
+
+**Reads**
+- Claude Code's transcripts in `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`): chat history and activity of each session, recent sessions to resume, statistics.
+- An agent's working folder, when you browse it in **📁 Files** (read-only, without `node_modules`, `.git` and files that usually hold secrets).
+- Folder names, when you pick a folder for a new agent.
+- The list of listening ports and running processes (PowerShell `Get-NetTCPConnection` and `Win32_Process` on Windows, `lsof` and `ps` elsewhere), to match servers to agents. Only while the window is open.
+
+**Writes**
+- `~/.claude-vibeship` (or `VIBESHIP_DIR`): the access token, the ship layout, recent folders and files you attach in the chat.
+- A new project folder (and `git init`) only when you create one from the *Agent* button.
+
+**Runs**
+- Opens the window in Edge or Chrome app mode, or in your default browser.
+- From the window, only when you ask: sends your messages and slash commands to the session as if typed in the terminal, stops a turn, switches the model, opens a terminal running `claude` in a folder you choose (a new agent or a resumed session), and closes an agent by stopping its Claude Code process and what it started (Vibeship's server is spared).
+
+**Access control**
+- Every action from the window requires a random **token**, saved in a file in your user folder and passed only to the window opened by `/vibeship`.
+- The mod is **not sandboxed**: it has the same access as Claude Code. Only install mods from sources you trust.
 
 ## Structure
 ```

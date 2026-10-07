@@ -43,7 +43,7 @@ before(async () => {
   const port = await freePort()
   base = 'http://127.0.0.1:' + port
   child = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], {
-    env: { ...process.env, AGENT_OFFICE_PORT: String(port), AGENT_OFFICE_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: claudeDir, VIBESHIP_NO_UPDATE_CHECK: '1' },
+    env: { ...process.env, VIBESHIP_PORT: String(port), VIBESHIP_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: claudeDir, VIBESHIP_NO_UPDATE_CHECK: '1' },
     stdio: 'ignore',
   })
   for (let i = 0; i < 50; i++) { try { if ((await fetch(base + '/api/ping')).ok) break } catch {} await new Promise((r) => setTimeout(r, 100)) }
@@ -413,33 +413,11 @@ test('recent sessions: titles from the transcripts, live ones marked, resume ref
   await event({ type: 'session_end', session: A })
 })
 
-test('the old data folder (~/.claude-agent-office) is copied to ~/.claude-vibeship once, keeping the token', async () => {
-  const home = path.join(tmp, 'home')
-  const old = path.join(home, '.claude-agent-office')
-  fs.mkdirSync(old, { recursive: true })
-  const tok = 'ab'.repeat(24)
-  fs.writeFileSync(path.join(old, 'token'), tok)
-  fs.writeFileSync(path.join(old, 'layout.json'), JSON.stringify({ scene: 'engine', scenes: {} }))
-  const port = await freePort()
-  const env = { ...process.env, AGENT_OFFICE_PORT: String(port), USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_NO_UPDATE_CHECK: '1' }
-  delete env.AGENT_OFFICE_DIR
-  const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], { env, stdio: 'ignore' })
-  try {
-    for (let i = 0; i < 50; i++) { try { if ((await fetch('http://127.0.0.1:' + port + '/api/ping')).ok) break } catch {} await new Promise((r) => setTimeout(r, 100)) }
-    const nu = path.join(home, '.claude-vibeship')
-    assert.equal(fs.readFileSync(path.join(nu, 'token'), 'utf8'), tok) // same token: windows and sessions keep working
-    assert.equal(JSON.parse(fs.readFileSync(path.join(nu, 'layout.json'), 'utf8')).scene, 'engine')
-    assert.ok(fs.existsSync(path.join(old, 'token')), 'the old folder is left as it was')
-    const r = await fetch('http://127.0.0.1:' + port + '/api/stats', { headers: { 'x-token': tok } })
-    assert.equal(r.status, 200)
-  } finally { srv.kill() }
-})
-
 test('new version check: a newer published version is announced, an equal or older one is not', async () => {
   const current = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version
   const run = async (published) => {
     const port = await freePort()
-    const env = { ...process.env, AGENT_OFFICE_PORT: String(port), AGENT_OFFICE_DIR: path.join(tmp, 'upd-' + published), CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_UPDATE_URL: 'data:application/json,' + encodeURIComponent(JSON.stringify({ version: published })) }
+    const env = { ...process.env, VIBESHIP_PORT: String(port), VIBESHIP_DIR: path.join(tmp, 'upd-' + published), CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_UPDATE_URL: 'data:application/json,' + encodeURIComponent(JSON.stringify({ version: published })) }
     delete env.VIBESHIP_NO_UPDATE_CHECK
     const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], { env, stdio: 'ignore' })
     try {

@@ -28,7 +28,7 @@ function fakeServer(on: any, queued: any[]) {
 async function boot($: any, on: any, queued: any[]) {
   const clock = mock.clock(on)
   mock.store(on)
-  mock.env(on, { AGENT_OFFICE_PORT: '47991', AGENT_OFFICE_DIR: 'C:/tmp/vibeship-test' })
+  mock.env(on, { VIBESHIP_PORT: '47991', VIBESHIP_DIR: 'C:/tmp/vibeship-test' })
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd })) // the engine beneath the plugin
   on('command.register', () => ({ value: undefined }))
   on('session.id', () => ({ value: 'sess1' }))

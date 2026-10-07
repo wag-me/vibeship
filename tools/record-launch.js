@@ -56,7 +56,7 @@ async function main() {
   if (!exe) throw new Error('No Edge/Chrome found')
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vibeship-trailer-'))
   const port = await freePort(), base = 'http://127.0.0.1:' + port
-  server = spawn(process.execPath, [path.join(ROOT, 'server', 'server.js')], { env: { ...process.env, AGENT_OFFICE_PORT: String(port), AGENT_OFFICE_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_NO_UPDATE_CHECK: '1' }, stdio: 'ignore' })
+  server = spawn(process.execPath, [path.join(ROOT, 'server', 'server.js')], { env: { ...process.env, VIBESHIP_PORT: String(port), VIBESHIP_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_NO_UPDATE_CHECK: '1' }, stdio: 'ignore' })
   for (let i = 0; i < 50; i++) { try { if ((await fetch(base + '/api/ping')).ok) break } catch {} await sleep(100) }
 
   const dbg = await freePort()

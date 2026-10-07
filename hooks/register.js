@@ -8,12 +8,12 @@ function statusOf(tool) {
 }
 
 // ---------- Web window (local server + browser) ----------
-// Port and data folder can be changed with AGENT_OFFICE_PORT and AGENT_OFFICE_DIR (handy to test without disturbing other windows)
+// Port and data folder can be changed with VIBESHIP_PORT and VIBESHIP_DIR (handy to test without disturbing other windows)
 let BASE = 'http://127.0.0.1:47890'
 let dataDir = null
-let loc = null // location chosen with AGENT_OFFICE_LOC (bridge, engine, habitat)
-let look = null // look chosen with AGENT_OFFICE_LOOK ("species:shirt")
-let agentName = null // name chosen with AGENT_OFFICE_NAME; otherwise the folder name is used
+let loc = null // location chosen with VIBESHIP_LOC (bridge, engine, habitat)
+let look = null // look chosen with VIBESHIP_LOOK ("species:shirt")
+let agentName = null // name chosen with VIBESHIP_NAME; otherwise the folder name is used
 let sessionId = 'default'
 let serverStarting = false
 let turnId = null // current turn, needed to stop it from the window
@@ -370,13 +370,13 @@ export function register(on) {
       name: 'vibeship',
       description: 'Open the Vibeship window (locations, stations, agents at work)',
     })
-    const port = await $.env.get('AGENT_OFFICE_PORT')
+    const port = await $.env.get('VIBESHIP_PORT')
     if (port && /^\d+$/.test(port)) BASE = 'http://127.0.0.1:' + port
-    dataDir = (await $.env.get('AGENT_OFFICE_DIR')) ?? null
-    agentName = ((await $.env.get('AGENT_OFFICE_NAME')) ?? '').trim().slice(0, 40) || null
-    const lm = /^([a-z]*):(\d?)$/.exec(((await $.env.get('AGENT_OFFICE_LOOK')) ?? '').trim())
+    dataDir = (await $.env.get('VIBESHIP_DIR')) ?? null
+    agentName = ((await $.env.get('VIBESHIP_NAME')) ?? '').trim().slice(0, 40) || null
+    const lm = /^([a-z]*):(\d?)$/.exec(((await $.env.get('VIBESHIP_LOOK')) ?? '').trim())
     look = lm ? { species: lm[1] || undefined, shirt: lm[2] !== '' ? Number(lm[2]) : undefined } : null
-    loc = ((await $.env.get('AGENT_OFFICE_LOC')) ?? '').trim() || null
+    loc = ((await $.env.get('VIBESHIP_LOC')) ?? '').trim() || null
     sessionId = await $.session.id()
     if (cancelPoll) cancelPoll.cancel()
     cancelPoll = $.clock.every(1000, () => void pollCommands($))

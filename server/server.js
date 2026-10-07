@@ -7,14 +7,11 @@ const path = require('path')
 const crypto = require('crypto')
 const { spawn, spawnSync, execFile } = require('child_process')
 
-const PORT = Number(process.env.AGENT_OFFICE_PORT || 47890)
+const ENV_PORT = process.env.VIBESHIP_PORT
+const ENV_DIR = process.env.VIBESHIP_DIR
+const PORT = Number(ENV_PORT || 47890)
 const WEB = path.join(__dirname, '..', 'web')
-const DATA_DIR = process.env.AGENT_OFFICE_DIR || path.join(os.homedir(), '.claude-vibeship')
-// The data folder used to be ~/.claude-agent-office: copy it over once, so the token, the layout and the recent folders are kept.
-if (!process.env.AGENT_OFFICE_DIR) {
-  const old = path.join(os.homedir(), '.claude-agent-office')
-  try { if (!fs.existsSync(DATA_DIR) && fs.statSync(old).isDirectory()) fs.cpSync(old, DATA_DIR, { recursive: true }) } catch {}
-}
+const DATA_DIR = ENV_DIR || path.join(os.homedir(), '.claude-vibeship')
 const LAYOUT_FILE = path.join(DATA_DIR, 'layout.json')
 
 // ---------- New version check ----------
@@ -681,12 +678,12 @@ function launchAgent(cwd, name, species, shirt, loc, resume) {
   lastLaunch = Date.now()
   const nm = String(name || '').replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, 40)
   const envs = []
-  if (nm) envs.push(['AGENT_OFFICE_NAME', nm])
+  if (nm) envs.push(['VIBESHIP_NAME', nm])
   const look = cleanLook({ species, shirt })
-  if (look) envs.push(['AGENT_OFFICE_LOOK', (look.species || '') + ':' + (look.shirt ?? '')])
-  if (cleanLoc(loc)) envs.push(['AGENT_OFFICE_LOC', cleanLoc(loc)])
-  if (process.env.AGENT_OFFICE_PORT) envs.push(['AGENT_OFFICE_PORT', String(process.env.AGENT_OFFICE_PORT).replace(/\D/g, '')])
-  if (process.env.AGENT_OFFICE_DIR) envs.push(['AGENT_OFFICE_DIR', process.env.AGENT_OFFICE_DIR])
+  if (look) envs.push(['VIBESHIP_LOOK', (look.species || '') + ':' + (look.shirt ?? '')])
+  if (cleanLoc(loc)) envs.push(['VIBESHIP_LOC', cleanLoc(loc)])
+  if (ENV_PORT) envs.push(['VIBESHIP_PORT', String(ENV_PORT).replace(/\D/g, '')])
+  if (ENV_DIR) envs.push(['VIBESHIP_DIR', ENV_DIR])
   fs.mkdirSync(DATA_DIR, { recursive: true })
   if (WIN) {
     if (envs.some(([, v]) => /["%\r\n]/.test(v))) throw new Error('Unsupported variable')

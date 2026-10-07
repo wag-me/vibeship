@@ -54,7 +54,7 @@ async function main() {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vibeship-ui-'))
   const port = await freePort()
   const base = 'http://127.0.0.1:' + port
-  server = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], { env: { ...process.env, AGENT_OFFICE_PORT: String(port), AGENT_OFFICE_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_UPDATE_URL: 'data:application/json,{"version":"99.0.0"}' }, stdio: 'ignore' })
+  server = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js')], { env: { ...process.env, VIBESHIP_PORT: String(port), VIBESHIP_DIR: path.join(tmp, 'data'), CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), VIBESHIP_UPDATE_URL: 'data:application/json,{"version":"99.0.0"}' }, stdio: 'ignore' })
   for (let i = 0; i < 50; i++) { try { if ((await fetch(base + '/api/ping')).ok) break } catch {} await sleep(100) }
   const token = fs.readFileSync(path.join(tmp, 'data', 'token'), 'utf8').trim()
   const post = (p, body, auth = false) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(auth ? { 'x-token': token } : {}) }, body: JSON.stringify(body) })

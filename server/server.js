@@ -249,6 +249,10 @@ function handleEvent(ev) {
     }
     case 'turn_start': {
       unpark(session) // a new turn: whatever was asked in the terminal has been answered
+      const main = mainOf(session)
+      main.busy = true // until turn_complete the agent is working, even while it only thinks between tools
+      if (main.status === 'idle') { main.status = 'think'; main.detail = '' }
+      main.t = now
       const m = lastUser(session, ['queued', 'sent'])
       if (m) m.state = 'working'
       break
@@ -299,6 +303,7 @@ function handleEvent(ev) {
       const m = mainOf(session)
       m.status = 'idle'
       m.detail = ''
+      m.busy = false
       const reason = ev.reason || 'answer'
       const end = reason === 'answer' ? 'done' : reason === 'aborted' ? 'aborted' : 'error'
       const running = (chat.get(session) || []).filter((m) => m.role === 'user' && m.state === 'working')
@@ -896,8 +901,10 @@ setInterval(() => {
   for (const [id, p] of perms) if (now - p.ts > (p.questions ? 180000 : 120000)) { endPerm(id); changed = true }
   for (const [k, a] of agents) if (a.done && now - a.doneAt > 9000) { agents.delete(k); changed = true }
   for (const a of agents.values()) {
-    if (a.status !== 'idle' && now - a.t > IDLE_AFTER_MS) {
-      a.status = 'idle'
+    // the last tool finished a while ago: back to idle, or to "thinking" if its turn is still going
+    const rest = a.busy && now - a.t < 15 * 60000 ? 'think' : 'idle' // a turn whose end never arrived does not think forever
+    if (a.status !== rest && a.status !== 'idle' && now - a.t > IDLE_AFTER_MS) {
+      a.status = rest
       a.detail = ''
       changed = true
     }

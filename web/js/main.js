@@ -19,14 +19,15 @@ const hashOf = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.ch
 // ---------- States ----------
 const STATUS = {
   idle:     { icon: '💤', text: 'idle' },
-  read:     { icon: '📖', text: 'reading and thinking' },
+  think:    { icon: '💭', text: 'thinking' },
+  read:    { icon: '📖', text: 'reading and thinking' },
   write:    { icon: '⌨️', text: 'writing' },
   run:      { icon: '💻', text: 'running commands' },
   web:      { icon: '🌐', text: 'searching the web' },
   delegate: { icon: '📨', text: 'delegating' },
   error:    { icon: '⚠️', text: 'has a problem' },
 }
-const MODE_OF = { read: 'think', write: 'typing', run: 'typing', web: 'think', delegate: 'typing', error: 'alert' }
+const MODE_OF = { think: 'think', read: 'think', write: 'typing', run: 'typing', web: 'think', delegate: 'typing', error: 'alert' }
 
 // ---------- Default layouts (coordinates in meters, rot in radians) ----------
 const DEFAULTS = {
@@ -1798,6 +1799,7 @@ $('card-form').onsubmit = (ev) => {
   text = composeMessage(text)
   sendCommand('say', text)
   inp.value = ''
+  for (const a of atts) if (a.thumb) URL.revokeObjectURL(a.thumb)
   atts = []; webOn = false; renderAtts()
   $('cmdlist').hidden = true
   $('cmenu').hidden = true
@@ -1884,7 +1886,11 @@ function renderAtts() {
     c.append(t, x)
     return c
   }
-  const chips = atts.map((a, i) => chip((a.kind === 'file' ? '📎 ' : '📄 ') + (a.name ?? a.rel), a.path ?? a.rel, () => { atts.splice(i, 1); renderAtts() }))
+  const chips = atts.map((a, i) => {
+    const c = chip((a.kind === 'file' ? (a.thumb ? '' : '📎 ') : '📄 ') + (a.name ?? a.rel), a.path ?? a.rel, () => { if (a.thumb) URL.revokeObjectURL(a.thumb); atts.splice(i, 1); renderAtts() })
+    if (a.thumb) { const img = document.createElement('img'); img.src = a.thumb; img.alt = ''; c.prepend(img) } // a preview of an attached image
+    return c
+  })
   if (webOn) chips.push(chip('🌐 Browse the web', 'Claude may search the web for this message', () => { webOn = false; renderAtts() }))
   box.replaceChildren(...chips)
   box.hidden = !chips.length
@@ -1900,12 +1906,35 @@ async function uploadFiles(files) {
       const r = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: s, name: f.name, data }) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) { toast(d.error || 'Upload failed'); continue }
-      atts.push({ kind: 'file', name: d.name, path: d.path })
+      atts.push({ kind: 'file', name: d.name, path: d.path, thumb: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined })
       renderAtts()
     } catch { toast('Upload failed') }
   }
   sfx.place()
 }
+// Screenshots: paste them into the message box (Ctrl+V), or drop files anywhere on the card
+const stamp = () => new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')
+$('card-text').addEventListener('paste', (e) => {
+  const files = [...(e.clipboardData?.files ?? [])]
+  if (!files.length) return // plain text: pasted as usual
+  e.preventDefault()
+  // a pasted screenshot is always called "image.png": give each one its own name
+  uploadFiles(files.map((f, i) => (/^image\.\w+$/i.test(f.name) ? new File([f], 'screenshot-' + stamp() + (i ? '-' + i : '') + '.' + (f.type.split('/')[1] || 'png'), { type: f.type }) : f)))
+})
+const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files')
+$('card').addEventListener('dragover', (e) => {
+  if (!hasFiles(e) || $('card-form').style.display === 'none') return
+  e.preventDefault()
+  $('card').classList.add('drop')
+})
+$('card').addEventListener('dragleave', (e) => { if (!$('card').contains(e.relatedTarget)) $('card').classList.remove('drop') })
+$('card').addEventListener('drop', (e) => {
+  $('card').classList.remove('drop')
+  if (!hasFiles(e) || $('card-form').style.display === 'none') return
+  e.preventDefault()
+  uploadFiles([...e.dataTransfer.files])
+  $('card-text').focus()
+})
 // pick a project file to add as context (browse folders with the same API as the Files panel)
 async function showContextPicker(rel = '') {
   const s = selSession()
@@ -2055,13 +2084,13 @@ $('card-text').addEventListener('keyup', (e) => {
 })
 
 // ---- Resizable agent card: drag the corner grip (anchored bottom-right, so it grows up and left) ----
-const CARD_SIZE_KEY = 'ao-card-size'
+const CARD_SIZE_KEY = 'ao-card-size2' // h is the whole card's height (it used to be the conversation's)
 function applyCardSize(s) {
   const card = $('card')
   if (s?.w) card.style.setProperty('--card-w', s.w + 'px'); else card.style.removeProperty('--card-w')
-  // a real height, not just a cap: otherwise a short conversation would not let the card grow
-  $('chat').style.height = s?.h ? s.h + 'px' : ''
-  $('chat').style.maxHeight = s?.h ? 'none' : ''
+  // a real height for the card, not just a cap: the conversation fills what the rest leaves
+  card.style.height = s?.h ? 'min(' + s.h + 'px, calc(100vh - 150px))' : ''
+  card.classList.toggle('sized', !!s?.h)
 }
 try { applyCardSize(JSON.parse(localStorage.getItem(CARD_SIZE_KEY) || 'null')) } catch {}
 $('card-grip').addEventListener('pointerdown', (e) => {
@@ -2069,11 +2098,13 @@ $('card-grip').addEventListener('pointerdown', (e) => {
   const grip = e.currentTarget
   grip.setPointerCapture(e.pointerId)
   const x0 = e.clientX, y0 = e.clientY
-  const w0 = $('card').getBoundingClientRect().width
-  const h0 = $('chat').getBoundingClientRect().height
+  const card = $('card')
+  const { width: w0, height: h0 } = card.getBoundingClientRect()
+  // never smaller than what the rest of the card needs plus a few lines of conversation, so it never has to scroll
+  const minH = Math.ceil(card.scrollHeight + (card.offsetHeight - card.clientHeight) - $('chat').getBoundingClientRect().height + 110)
   let size = null
   const move = (ev) => {
-    size = { w: Math.round(clamp(w0 - (ev.clientX - x0), 340, innerWidth - 28)), h: Math.round(clamp(h0 - (ev.clientY - y0), 120, innerHeight - 260)) }
+    size = { w: Math.round(clamp(w0 - (ev.clientX - x0), 340, innerWidth - 28)), h: Math.round(clamp(h0 - (ev.clientY - y0), Math.min(minH, innerHeight - 150), innerHeight - 150)) }
     applyCardSize(size)
   }
   const up = () => {

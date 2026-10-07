@@ -180,6 +180,19 @@ test("Claude's questions: the window's answers reach the mod; incomplete ones ar
   await event({ type: 'session_end', session: 'qa' })
 })
 
+test('during a turn the main agent is "thinking", not idle, until the turn completes', async () => {
+  await event({ type: 'session_start', session: 'th' })
+  const main = async () => (await snapshot()).agents.find((a) => a.session === 'th' && a.kind === 'main')
+  assert.equal((await main()).status, 'idle')
+  await event({ type: 'turn_start', session: 'th' })
+  assert.equal((await main()).status, 'think')
+  await event({ type: 'tool', session: 'th', status: 'run', detail: 'npm test' })
+  assert.equal((await main()).status, 'run')
+  await event({ type: 'turn_complete', session: 'th', reason: 'answer', answer: 'ok' })
+  assert.equal((await main()).status, 'idle')
+  await event({ type: 'session_end', session: 'th' })
+})
+
 test('permissions: a question that moved to the terminal stays marked until it is answered there or the turn ends', async () => {
   await event({ type: 'session_start', session: 'pk' })
   await event({ type: 'permission', session: 'pk', id: 'q1', tool: 'Bash', summary: 'git push' })
